@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { detectHolds, pickTarget, sampleImage } from './utils/detect.js'
+import { detectAllHolds, detectHolds, pickTarget, sampleImage } from './utils/detect.js'
 import { FEET, HOLD_ORDER, HOLD_TYPES, MOVES, estimateHoldType } from './utils/glossary.js'
 import { figureAt } from './utils/stickman.js'
 import { LEVELS, bodyModel, findRoute, toMeters } from './utils/route.js'
@@ -213,6 +213,7 @@ export default function App() {
   const [target, setTarget] = useState(null)
   const [holds, setHolds] = useState([])
   const [frameIdx, setFrameIdx] = useState(0) // 0=출발 자세, 이후 동작별 프레임(점프는 공중+착지 2프레임)
+  const [feetFree, setFeetFree] = useState(true) // 발 자유: 다른 색 홀드도 발로 씀
   const [mode, setMode] = useState('edit') // edit | start | finish | type
   const [term, setTerm] = useState({ kind: 'move', key: null })
   const boxRef = useRef(null)
@@ -316,20 +317,30 @@ export default function App() {
     [height, wingspan, flexibility, level],
   )
 
+  // 발 자유용: 사진 속 모든 색의 홀드(경로 홀드와 겹치는 것은 제외)
+  const allHolds = useMemo(() => (photo ? detectAllHolds(photo.img) : []), [photo])
+  const footExtras = useMemo(() => {
+    if (!feetFree || !photo) return []
+    return allHolds
+      .filter((a) => !usable.some((u) => Math.hypot((u.x - a.x) * photo.aspect, u.y - a.y) < 0.03))
+      .map((a) => ({ ...a, type: 'jug', footOnly: true }))
+  }, [feetFree, allHolds, usable, photo])
+
   const plan = useMemo(() => {
     if (!photo || usable.length < 3) return null
-    const m = toMeters(usable, wallWidth, photo.aspect)
-    const ys = m.map((h) => h.my)
+    const m = toMeters([...usable, ...footExtras], wallWidth, photo.aspect)
+    const ys = m.slice(0, usable.length).map((h) => h.my)
     const lo = Math.min(...ys)
     const hi = Math.max(...ys)
     const span = hi - lo || 1
     // 직접 지정한 시작/끝 홀드가 있으면 그것을 쓰고, 없으면 맨 아래 20% / 맨 위 10%를 자동으로 사용
     const picked = (role) => usable.map((h, i) => (h.role === role ? i : -1)).filter((i) => i >= 0)
-    const startIds = picked('start').length ? picked('start') : m.filter((h) => h.my < lo + span * 0.2).map((h) => h.id)
-    const finishIds = picked('finish').length ? picked('finish') : m.filter((h) => h.my > hi - span * 0.1).map((h) => h.id)
+    const handM = m.slice(0, usable.length)
+    const startIds = picked('start').length ? picked('start') : handM.filter((h) => h.my < lo + span * 0.2).map((h) => h.id)
+    const finishIds = picked('finish').length ? picked('finish') : handM.filter((h) => h.my > hi - span * 0.1).map((h) => h.id)
     const route = findRoute(m, model, startIds, finishIds)
     return { m, route }
-  }, [photo, usable, wallWidth, model])
+  }, [photo, usable, footExtras, wallWidth, model])
 
   const nSteps = plan?.route?.steps.length ?? 0
   const frames = useMemo(() => {
@@ -446,6 +457,12 @@ export default function App() {
                         />
                       )
                     })}
+                  {fig && shownPose && fig.feetInfo.map((f) =>
+                    f.kind === 'smear' ? (
+                      // 스미어: 홀드 없이 벽을 미는 발. 발바닥이 벽에 닿아 있음을 짧은 선으로 표시
+                      <line key={'sm' + f.side} x1={Number(sv(shownPose[f.side === 'L' ? 'footL' : 'footR']).split(',')[0]) - 0.022} x2={Number(sv(shownPose[f.side === 'L' ? 'footL' : 'footR']).split(',')[0]) + 0.022} y1={Number(sv(shownPose[f.side === 'L' ? 'footL' : 'footR']).split(',')[1]) + 0.008} y2={Number(sv(shownPose[f.side === 'L' ? 'footL' : 'footR']).split(',')[1]) + 0.008} stroke="#4dd0ff" strokeWidth="0.009" strokeLinecap="round" />
+                    ) : null,
+                  )}
                   {fig && shownPose && <Stickman p={shownPose} sv={sv} headR={0.06 * (height / 100) * k} hard={step?.hard} label={fig.airborne ? '점프!' : null} />}
                   {typedHolds.map((h, i) =>
                     h.type === 'volume' && h.extent ? (
@@ -513,6 +530,7 @@ export default function App() {
               <button className={mode === 'start' ? 'on start' : ''} onClick={() => setMode('start')}>🟢 시작</button>
               <button className={mode === 'finish' ? 'on finish' : ''} onClick={() => setMode('finish')}>🏁 끝</button>
               <button className={mode === 'type' ? 'on' : ''} onClick={() => setMode('type')}>🏷 종류</button>
+              <button className={feetFree ? 'on feet' : ''} onClick={() => setFeetFree(!feetFree)} title="다른 색 홀드도 발로 쓰기">🦶 발 자유</button>
             </div>
           )}
 

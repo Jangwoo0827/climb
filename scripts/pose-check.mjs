@@ -13,6 +13,8 @@ const segDist = (p, a, b) => {
 const scenes = {
   demo: { aspect: 480 / 640, px: [[190, 590], [280, 545], [200, 490], [300, 440], [220, 385], [310, 335], [240, 280], [330, 230], [250, 175], [190, 125], [260, 70]].map(([x, y]) => [x / 480, y / 640]), start: [0], fin: [10] },
   photo: { aspect: 437 / 478, px: [[40, 30], [48, 57], [33, 104], [219, 64], [204, 43], [168, 37], [277, 73], [309, 97], [292, 147], [260, 177], [188, 190], [68, 175], [67, 211], [20, 230], [95, 263], [70, 274], [168, 322], [273, 289], [228, 397], [367, 244], [387, 364], [48, 364], [58, 432]].map(([x, y]) => [x / 437, y / 478]), start: [22], fin: [5] },
+  // 발 자유: 데모 경로 + 다른 색 홀드 26개(발로만 씀)
+  demoFree: { aspect: 480 / 640, px: [[190, 590], [280, 545], [200, 490], [300, 440], [220, 385], [310, 335], [240, 280], [330, 230], [250, 175], [190, 125], [260, 70]].map(([x, y]) => [x / 480, y / 640]), start: [0], fin: [10], extra: (() => { let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647; return Array.from({ length: 26 }, () => [(30 + rnd() * 420) / 480, (30 + rnd() * 580) / 640]) })() },
   // 시작 홀드 2개가 가슴 높이에서 양옆으로 벌어진 경우(실제 신고된 사례)
   wideStart: { aspect: 0.8, px: [[0.25, 0.62], [0.62, 0.6], [0.45, 0.78], [0.5, 0.45], [0.35, 0.33], [0.55, 0.2], [0.42, 0.08]], start: [0, 1], fin: [6] },
 }
@@ -25,11 +27,11 @@ let bentArms = 0
 let footMatch = 0
 let hipHigh = 0
 let bad = 0
-for (const [name, sc] of Object.entries(scenes))
+for (const [name, sc] of Object.entries(scenes).filter(([n]) => !process.env.SCENE || n === process.env.SCENE))
   for (const W of [3.5, 5])
     for (const height of [150, 165, 185])
       for (const level of ['beginner', 'advanced']) {
-        const holds = toMeters(sc.px.map(([x, y], i) => { const h = { x, y, size: 0.002 + ((i * 37) % 7) * 0.0004, elong: 1, angle: 0 }; return { ...h, type: estimateHoldType(h, 0.003) } }), W, sc.aspect)
+        const holds = toMeters([...sc.px.map(([x, y], i) => { const h = { x, y, size: 0.002 + ((i * 37) % 7) * 0.0004, elong: 1, angle: 0 }; return { ...h, type: estimateHoldType(h, 0.003) } }), ...(sc.extra ?? []).map(([x, y]) => ({ x, y, size: 0.003, type: 'jug', footOnly: true }))], W, sc.aspect)
         const H = height / 100
         const body = bodyModel({ height, apeIndex: 1, flexibility: 3, level })
         const r = findRoute(holds, body, sc.start, sc.fin)
@@ -80,5 +82,6 @@ for (const [name, sc] of Object.entries(scenes))
             }
           }
       }
+if (process.env.SCENE) console.log('scene', process.env.SCENE)
 console.log('자세', total, '문제', bad, '· 발이 홀드에 0개', smearBoth, '· 1개', oneFoot, '· 손 이동', steps, '중 크게 뻗는 이동', longMoves, '· 팔 굽혀 매달림', bentArms, '· 발 매칭', footMatch, '· 엉덩이 높음', hipHigh)
 process.exitCode = bad ? 1 : 0

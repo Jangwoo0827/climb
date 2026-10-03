@@ -193,6 +193,12 @@ function findBlobs(img, target, scale) {
   const { w, h } = img
   const mask = new Uint8Array(w * h)
   for (let p = 0; p < w * h; p++) if (matches(img, p, target, scale)) mask[p] = 1
+  return blobsFromMask(img, mask)
+}
+
+// 마스크를 덩어리로 묶어 크기·위치·평균 색 등을 구한다
+function blobsFromMask(img, mask) {
+  const { w, h } = img
   const m = open3(mask, w, h)
 
   const label = new Int32Array(w * h)
@@ -361,4 +367,37 @@ export function detectHolds(img, target) {
 }
 
 // 테스트/디버깅용: 내부 함수를 노출함
+// 발 자유용: 색과 상관없이 벽 배경이 아닌 덩어리를 모두 홀드로 찾는다(발 자리로만 씀)
+export function detectAllHolds(img) {
+  const { w, h } = img
+  const bgs = backgroundColors(img)
+  if (!bgs.length) return []
+  const mask = new Uint8Array(w * h)
+  for (let p = 0; p < w * h; p++) {
+    const i = p * 3
+    let near = false
+    for (const bg of bgs) {
+      // 벽 배경색과 비슷하면(그림자처럼 어두워진 벽 포함) 홀드가 아님
+      const dc = Math.hypot(img.lab[i + 1] - bg.a, img.lab[i + 2] - bg.b)
+      const dl = img.lab[i] - bg.L
+      if (dc < 12 && dl < 12 && dl > -45) {
+        near = true
+        break
+      }
+    }
+    if (!near) mask[p] = 1
+  }
+  const { blobs } = blobsFromMask(img, mask)
+  const minArea = Math.max(14, w * h * 0.0004)
+  const maxArea = w * h * 0.03
+  return blobs
+    .filter((b) => {
+      if (b.area < minArea || b.area > maxArea) return false
+      const bw = b.x1 - b.x0 + 1
+      const bh = b.y1 - b.y0 + 1
+      return b.area / (bw * bh) >= 0.3 && Math.max(bw, bh) / Math.min(bw, bh) <= 6
+    })
+    .map((b) => ({ x: b.sx / b.area / w, y: b.sy / b.area / h, size: b.area / (w * h) }))
+}
+
 export const __internals = { findBlobs, isHold, matches }

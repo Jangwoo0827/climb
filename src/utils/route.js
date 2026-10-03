@@ -42,6 +42,7 @@ export function toMeters(holds, wallWidthM, aspect) {
     size: h.size,
     type: h.type, // 홀드 종류(점보, 크림프 등)
     parent: h.parent, // 볼륨의 접점이면 그 볼륨이 원래 몇 번째 검출인지
+    footOnly: h.footOnly, // 발 자유: 다른 색 홀드(발로만 씀)
     nx: h.x,
     ny: h.y,
   }))
@@ -122,7 +123,7 @@ export function findRoute(holds, body, startIds, finishIds) {
       const fixed = hand === 'L' ? r : l
       const cur = hand === 'L' ? l : r
       for (let t = 0; t < n; t++) {
-        if (t === cur) continue
+        if (t === cur || holds[t].footOnly) continue // 발 자유로 추가된 홀드는 발로만 씀
         const match = t === fixed // 매칭: 반대 손이 잡은 홀드로 두 손을 모음
         const d = dist(holds[t], holds[fixed])
         if (d > body.jumpReach) continue

@@ -106,3 +106,5 @@ main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 
 .ver { font-size: 10px; font-weight: 400; color: #6f778a; margin-left: 4px; }
 .nav.play { width: 48px; background: #3b3358; color: #d9c6ff; }
+.modes button.on.feet { background: #4dd0ff; color: #111; }
+.modes button { font-size: 13px; }

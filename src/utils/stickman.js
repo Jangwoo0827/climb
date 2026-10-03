@@ -151,54 +151,36 @@ export function figureAt(route, holds, body, heightM, stepIndex, phase = 'land')
       for (let hy = loY; hy <= hiY + 1e-9; hy += 0.05) {
         const hip = { x: hx, y: hy }
 
-        // 발 후보: 손이 잡지 않은 홀드, 벽에 밀착(스미어). 바닥에는 딛지 않으므로 모두 바닥에서 FOOT_CLEAR 이상 위에 있음
-        const feet = []
-        holds.forEach((h) => {
-          if (h.id === L || h.id === R) return
-          const p = { x: h.mx, y: h.my }
-          const d = dist(p, hip)
-          if (p.y < FOOT_CLEAR) return // 바닥에 닿는 낮은 홀드는 제외
-          if (Math.abs(p.x - hip.x) > 1.2 * (hip.y - p.y)) return // 발은 엉덩이 아래쪽(수직에서 약 50도 안)에만: 다리를 옆으로 눕히지 않음
-          if (d > 0.95 * leg || d < near * leg || p.y > hip.y - 0.3 * leg) return // 너무 멀거나, 너무 가깝거나(무릎이 접힘), 엉덩이 근처보다 높은 홀드
-          // 볼륨은 발판이 넓어 안정적이라 조금 유리하게 침
-          feet.push({ p, c: -0.6 + ((d - 0.72 * leg) / leg) ** 2 * 4 + (p.y > hip.y - 0.25 * leg ? 0.3 : 0) - (h.type === 'volume' ? 0.25 : 0), id: h.id })
-        })
-        for (const s of [-1, 1]) {
-          // 낮은 자리에서는 바닥에서 띄운 높이(FOOT_CLEAR)의 벽면에 발을 붙임
-          const fy = Math.max(FOOT_CLEAR, hy - 0.78 * leg)
-          const p = { x: hx + s * Math.min(0.17 * heightM, 1.1 * (hy - fy)), y: fy } // 벽에 붙이는 발도 엉덩이 아래쪽에
-          if (dist(p, hip) <= 0.98 * leg && dist(p, hip) >= near * leg) feet.push({ p, c: 8, id: null }) // 벽면 스미어는 발 닿는 홀드가 하나도 없을 때만
-        }
-        // 삼각형 기본자세: 두 발을 넓게 벌려 밑변을 만들고 엉덩이(무게중심)가 그 밑변 위에 오게 하는 발 조합을 고름
-        feet.sort((a, b) => a.c - b.c)
-        const cand = feet.slice(0, 10)
-        let f1 = null
-        let f2 = null
-        let footCost = Infinity
-        for (let i = 0; i < cand.length; i++)
-          for (let j = i; j < cand.length; j++) {
-            const a = cand[i]
-            const b = cand[j]
-            const spread = Math.abs(a.p.x - b.p.x)
-            // 발 매칭: 홀드가 하나뿐이면 두 발을 같은 홀드에 올림(허공에 발을 두지 않음)
-            const footMatch = i === j
-            if (footMatch && a.id === null) continue
-            if (!footMatch && dist(a.p, b.p) < 0.16 * heightM) continue // 다른 두 자리는 골반 너비 이상 벌림
-            let c = a.c + b.c
-            if (footMatch) c += ((dist(a.p, hip) - 0.88 * leg) / leg) ** 2 * 20 // 발을 모으면 다리를 펴서 무릎이 마름모로 벌어지지 않게
-            if (footMatch) c += 3 // 두 발을 벌린 삼각형보다는 덜 안정적
-            if (!footMatch) c += ((spread - 0.35 * heightM) / heightM) ** 2 * 30 // 밑변 너비: 키의 35% 정도
-            if (spread > 0.6 * heightM) c += 4 // 다리를 일자로 찢는 자세는 거의 불가능
-            const lo = Math.min(a.p.x, b.p.x)
-            const hi = Math.max(a.p.x, b.p.x)
-            if (!footMatch && (hx < lo || hx > hi)) c += 3 + (Math.min(Math.abs(hx - lo), Math.abs(hx - hi)) / torso) * 6 // 무게중심이 밑변 밖이면 크게 감점
-            if (c < footCost) {
-              footCost = c
-              f1 = a
-              f2 = b
-            }
+        // 발: 먼저 이 엉덩이 위치에서 편한 발 자리(삼각형 밑변)를 정하고,
+        // 그 자리 가까이(SNAP 안)에 홀드가 있으면 그 홀드를 딛고, 없으면 그 자리에서 벽을 민다(스미어).
+        // 홀드에 맞춰 몸을 접는 대신, 자연스러운 몸 모양을 기준으로 홀드를 고른다.
+        const SNAP = 0.3
+        const fy = Math.max(FOOT_CLEAR, hy - 0.78 * leg)
+        const off = Math.min(0.17 * heightM, 1.1 * (hy - fy))
+        const taken = new Set([L, R])
+        const pickFoot = (ideal, other) => {
+          let best = null
+          holds.forEach((h) => {
+            if (taken.has(h.id) || h.my < FOOT_CLEAR) return
+            const p = { x: h.mx, y: h.my }
+            const dd = dist(p, ideal)
+            if (dd > SNAP) return
+            const d = dist(p, hip)
+            if (d > 0.97 * leg || d < near * leg || p.y > hip.y - 0.3 * leg) return
+            if (Math.abs(p.x - hip.x) > 1.2 * (hip.y - p.y)) return // 다리를 옆으로 눕히지 않음
+            if (other && dist(p, other.p) < 0.16 * heightM) return // 두 발은 골반 너비 이상 벌림
+            const c = (dd / SNAP) ** 2 * 0.8 - (h.type === 'volume' ? 0.2 : 0)
+            if (!best || c < best.c) best = { p, c, id: h.id }
+          })
+          if (best) {
+            taken.add(best.id)
+            return best
           }
-        if (!f1) continue
+          return { p: ideal, c: 2.5, id: null } // 홀드가 없으면 편한 자리에서 벽을 밀어 버팀
+        }
+        const f1 = pickFoot({ x: hx - off, y: fy })
+        const f2 = pickFoot({ x: hx + off, y: fy }, f1)
+        const footCost = f1.c + f2.c
         const fx = (f1.p.x + f2.p.x) / 2
 
         // 상체 기울기: 손 쪽으로 몸을 기울일 수 있음
