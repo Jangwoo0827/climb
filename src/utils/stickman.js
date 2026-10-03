@@ -42,7 +42,7 @@ function joint(a, b, l1, l2, side, avoid, down = 0.8) {
   const c2 = { x: base.x + uy * h, y: base.y - ux * h }
   // 몸통에서 멀고, 아래로 처지는 쪽(사람 팔꿈치·무릎은 위로 꺾이지 않음)을 고름
   const score = (c) =>
-    (avoid ? Math.min(0.15, distSeg(c, avoid[0], avoid[1])) - (distSeg(c, avoid[0], avoid[1]) < 0.035 ? 1 : 0) : 0) + ((c.x - base.x) * side > 0 ? 0.03 : 0) + (base.y - c.y) * down - (down < 0.5 && (c.y < Math.min(a.y, b.y) - 0.15 || c.y > a.y + 0.01) ? 1 : 0) - // 무릎은 발보다 아래, 엉덩이보다 위로 가지 않음
+    (avoid ? Math.min(0.15, distSeg(c, avoid[0], avoid[1])) - (distSeg(c, avoid[0], avoid[1]) < 0.035 ? 1 : 0) : 0) + ((c.x - base.x) * side > 0 ? 0.03 : 0) + (base.y - c.y) * down - (down >= 0 && down < 0.5 && (c.y < Math.min(a.y, b.y) - 0.15 || c.y > a.y + 0.01) ? 1 : 0) - // 무릎은 발보다 아래, 엉덩이보다 위로 가지 않음
      (c.y < 0 ? 5 : 0)
   return score(c1) >= score(c2) ? c1 : c2
 }
@@ -145,6 +145,12 @@ export function figureAt(route, holds, body, heightM, stepIndex, phase = 'land')
     let loY = Math.max(minHipY, mid.y - arm - torso)
     let hiY = Math.min(Math.max(loY, mid.y - torso + 0.3), handTop)
     if (hiY < loY) loY = hiY = Math.max(0.05, hiY) // 손이 거의 바닥이면 최대한 낮은 자세
+    // 싯 스타트: 손이 낮아 다리를 펴고 설 수 없으면, 엉덩이를 바닥 가까이 두고 무릎을 가슴 쪽으로 올려 발을 앞 홀드에 올림
+    const sit = handTop < FOOT_CLEAR + 0.6 * leg
+    if (sit) {
+      loY = Math.min(0.2, handTop)
+      hiY = Math.max(loY, handTop)
+    }
     let best = null
 
     for (let hx = mid.x - 0.6; hx <= mid.x + 0.6; hx += 0.06) {
@@ -155,8 +161,8 @@ export function figureAt(route, holds, body, heightM, stepIndex, phase = 'land')
         // 그 자리 가까이(SNAP 안)에 홀드가 있으면 그 홀드를 딛고, 없으면 그 자리에서 벽을 민다(스미어).
         // 홀드에 맞춰 몸을 접는 대신, 자연스러운 몸 모양을 기준으로 홀드를 고른다.
         const SNAP = 0.3
-        const fy = Math.max(FOOT_CLEAR, hy - 0.78 * leg)
-        const off = Math.min(0.17 * heightM, 1.1 * (hy - fy))
+        const fy = sit ? Math.max(FOOT_CLEAR + 0.1, hy) : Math.max(FOOT_CLEAR, hy - 0.78 * leg)
+        const off = sit ? 0.2 * heightM : Math.min(0.17 * heightM, 1.1 * (hy - fy))
         const taken = new Set([L, R])
         const pickFoot = (ideal, other) => {
           let best = null
@@ -166,8 +172,13 @@ export function figureAt(route, holds, body, heightM, stepIndex, phase = 'land')
             const dd = dist(p, ideal)
             if (dd > SNAP) return
             const d = dist(p, hip)
-            if (d > 0.97 * leg || d < near * leg || p.y > hip.y - 0.3 * leg) return
-            if (Math.abs(p.x - hip.x) > 1.2 * (hip.y - p.y)) return // 다리를 옆으로 눕히지 않음
+            if (sit) {
+              // 싯 스타트: 무릎을 올리고 엉덩이 높이 근처의 앞쪽 홀드를 딛음
+              if (d > 0.9 * leg || d < 0.3 * leg || p.y > hip.y + 0.15 * leg) return
+            } else {
+              if (d > 0.97 * leg || d < near * leg || p.y > hip.y - 0.3 * leg) return
+              if (Math.abs(p.x - hip.x) > 1.2 * (hip.y - p.y)) return // 다리를 옆으로 눕히지 않음
+            }
             if (other && dist(p, other.p) < 0.16 * heightM) return // 두 발은 골반 너비 이상 벌림
             const c = (dd / SNAP) ** 2 * 0.8 - (h.type === 'volume' ? 0.2 : 0)
             if (!best || c < best.c) best = { p, c, id: h.id }
@@ -217,7 +228,7 @@ export function figureAt(route, holds, body, heightM, stepIndex, phase = 'land')
           cost += (lean / torso) ** 2 * 0.5
           if (prev) cost += 1.5 * dist(hip, prev) ** 2
 
-          if (!best || cost < best.cost) best = { cost, hip, S, f1, f2 }
+          if (!best || cost < best.cost) best = { cost, hip, S, f1, f2, sit }
         }
       }
     }
@@ -305,8 +316,8 @@ export function figureAt(route, holds, body, heightM, stepIndex, phase = 'land')
       hip,
       hipL,
       hipR,
-      kneeL: joint(hipL, footL.p, leg / 2, leg / 2, dropSide === 'L' ? 1 : -1, null, 0.05),
-      kneeR: joint(hipR, footR.p, leg / 2, leg / 2, dropSide === 'R' ? -1 : 1, null, 0.05),
+      kneeL: joint(hipL, footL.p, leg / 2, leg / 2, dropSide === 'L' ? 1 : -1, null, s.sit ? -0.6 : 0.05), // 싯 스타트는 무릎을 위로
+      kneeR: joint(hipR, footR.p, leg / 2, leg / 2, dropSide === 'R' ? -1 : 1, null, s.sit ? -0.6 : 0.05),
       footL: footL.p,
       footR: footR.p,
       // 어깨선의 중심에서 엉덩이로 이어지는 몸통 (그리기용)
