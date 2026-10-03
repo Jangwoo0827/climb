@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { detectAllHolds, detectHolds, pickTarget, sampleImage } from './utils/detect.js'
 import { FEET, HOLD_ORDER, HOLD_TYPES, MOVES, estimateHoldType } from './utils/glossary.js'
 import { buildSequence } from './utils/stickman.js'
+import { blendPose } from './utils/animate.js'
 import { LEVELS, bodyModel, estimateGrade, findRoute, generateRoute, toMeters } from './utils/route.js'
 
 // 사진 없이 체험할 수 있는 데모 벽 (초록색 = 우리 루트, 나머지는 다른 루트)
@@ -99,52 +100,6 @@ function BodyFigure({ height, wingspan }) {
       <text x={cx + W / 2} y={y(sh) - H * 0.07} fontSize={font} fill="#ffd400" textAnchor="end">팔 {Math.round(W)}</text>
     </svg>
   )
-}
-
-// 두 자세 사이를 사람이 움직이듯 이어 줌: 먼저 몸(엉덩이·어깨)을 옮기고, 그다음 움직이는 팔다리 하나를 들어 호를 그리며 옮김
-const LIMBS = {
-  hl: ['elL', 'hl'],
-  hr: ['elR', 'hr'],
-  footL: ['kneeL', 'footL'],
-  footR: ['kneeR', 'footR'],
-}
-const ease = (t) => (t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2)
-const seg = (t, a, b) => ease(Math.min(1, Math.max(0, (t - a) / (b - a))))
-export function blendPose(from, to, t) {
-  // 가장 많이 움직인 손이나 발이 이번 동작의 팔다리
-  let mover = null
-  let most = 0.03
-  for (const key of Object.keys(LIMBS)) {
-    const d = Math.hypot(to[key].x - from[key].x, to[key].y - from[key].y)
-    if (d > most) {
-      most = d
-      mover = key
-    }
-  }
-  const moving = new Set(mover ? LIMBS[mover] : [])
-  const center = { x: (to.hip.x + to.neck.x) / 2, y: (to.hip.y + to.neck.y) / 2 }
-  const p = {}
-  for (const key of Object.keys(to)) {
-    const a = from[key] ?? to[key]
-    const b = to[key]
-    const u = moving.has(key) ? seg(t, 0.3, 1) : seg(t, 0, mover ? 0.6 : 1) // 몸 먼저(0~60%), 팔다리는 나중(30~100%)
-    let x = a.x + (b.x - a.x) * u
-    let y = a.y + (b.y - a.y) * u
-    if (moving.has(key)) {
-      // 들어 올려 옮김: 발은 위로 살짝, 손은 몸 바깥쪽으로 둥글게
-      const lift = Math.sin(Math.PI * u) * Math.min(0.12, 0.25 * most) * (key === mover ? 1 : 0.6)
-      if (mover.startsWith('foot')) y += lift
-      else {
-        const ox = x - center.x
-        const oy = y - center.y
-        const n = Math.hypot(ox, oy) || 1
-        x += (ox / n) * lift
-        y += (oy / n) * lift
-      }
-    }
-    p[key] = { x, y }
-  }
-  return p
 }
 
 function useTweenPose(target, ms = 700) {
