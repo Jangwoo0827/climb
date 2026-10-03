@@ -248,9 +248,49 @@ export default function App() {
 
   // 홀드 종류: 직접 고친 값이 있으면 그것을, 없으면 모양으로 추정한 값을 씀
   const normalSize = useMemo(() => median(holds.filter((h) => !h.volume).map((h) => h.size)), [holds])
+  // AI 홀드 종류 판별(Teachable Machine 모델): 홀드 위치를 키로 결과를 저장해 두고, 새 홀드만 판별
+  const [mlTypes, setMlTypes] = useState({})
+  const holdKey = (h) => `${h.x.toFixed(4)},${h.y.toFixed(4)}`
+  useEffect(() => {
+    if (!photo || !holds.length) return
+    const todo = holds.filter((h) => !h.footOnly && !(holdKey(h) in mlTypes))
+    if (!todo.length) return
+    let cancelled = false
+    const im = new Image()
+    im.onload = async () => {
+      const { classifyHolds } = await import('./utils/holdModel.js') // 모델(TensorFlow.js)은 필요할 때만 불러옴
+      const res = await classifyHolds(im, todo)
+      if (cancelled || !res.length) return
+      setMlTypes((prev) => {
+        const next = { ...prev }
+        todo.forEach((h, i) => (next[holdKey(h)] = res[i]))
+        return next
+      })
+    }
+    im.src = photo.url
+    return () => {
+      cancelled = true
+    }
+  }, [photo, holds, mlTypes])
+  useEffect(() => setMlTypes({}), [photo])
+  const ML_MIN = 0.5 // AI 확신도가 이보다 낮으면 크기·모양 추정을 씀
   const typedHolds = useMemo(
-    () => holds.map((h) => ({ ...h, type: h.type ?? (h.volume ? 'volume' : estimateHoldType(h, normalSize)) })),
-    [holds, normalSize],
+    () =>
+      holds.map((h) => {
+        if (h.type) return h // 직접 고친 종류가 우선
+        if (h.volume) return { ...h, type: 'volume' }
+        let ml = mlTypes[holdKey(h)]
+        // 볼륨은 크기로 판단하는 게 더 확실함: 보통 크기 홀드를 AI가 볼륨이라 하면 볼륨을 뺀 종류 중 가장 높은 것을 씀
+        if (ml?.label === 'volume' && ml.probs) {
+          const rest = Object.entries(ml.probs).filter(([l]) => l !== 'volume')
+          const sum = rest.reduce((a, [, v]) => a + v, 0) || 1
+          const [label, v] = rest.sort((a, b) => b[1] - a[1])[0]
+          ml = { label, prob: v / sum }
+        }
+        if (ml && ml.prob >= ML_MIN) return { ...h, type: ml.label, ml }
+        return { ...h, type: estimateHoldType(h, normalSize) }
+      }),
+    [holds, normalSize, mlTypes],
   )
   // 경로 탐색에 쓰는 자리: 볼륨은 가장자리(위/왼쪽/오른쪽/아래)와 중앙을 손·발 자리로 펼침
   const usable = useMemo(() => {
@@ -346,6 +386,7 @@ export default function App() {
   const step = idx >= 0 ? plan?.route?.steps[idx] : null
   const hardCount = plan?.route?.steps.filter((s) => s.hard).length ?? 0
   const grade = plan?.route ? estimateGrade(plan.route, plan.m, model) : null
+  const stepMl = step ? typedHolds[plan.m[step.to]?.parent]?.ml : null
   const dynoCount = plan?.route?.steps.filter((s) => s.dyno).length ?? 0
   const fig = frame.fig ?? null
   const isFoot = frame.k === 'foot'
@@ -531,7 +572,7 @@ export default function App() {
                     if (!show) return null
                     return (
                       <text key={'t' + i} x={h.x * photo.aspect} y={h.y + 26 * u} textAnchor="middle" fontSize={12 * u} fontWeight="700" fill="#fff" stroke="#000" strokeWidth={3 * u} paintOrder="stroke">
-                        {HOLD_TYPES[h.type]?.name}
+                        {HOLD_TYPES[h.type]?.name}{h.ml ? ` AI ${Math.round(h.ml.prob * 100)}%` : ''}
                       </text>
                     )
                   })}
@@ -586,7 +627,7 @@ export default function App() {
                       <button className="pill move" onClick={() => openTerm('move', moveKey)}>동작 · {MOVES[moveKey].name}</button>
                     )}
                     {!isFoot && step?.holdType && HOLD_TYPES[step.holdType] && (
-                      <button className="pill hold" onClick={() => openTerm('hold', step.holdType)}>홀드 · {HOLD_TYPES[step.holdType].name}</button>
+                      <button className="pill hold" onClick={() => openTerm('hold', step.holdType)}>홀드 · {HOLD_TYPES[step.holdType].name}{stepMl ? ` · AI ${Math.round(stepMl.prob * 100)}%` : ''}</button>
                     )}
                     {fig?.feetInfo.map((f) => (
                       <button key={f.side} className="pill foot" onClick={() => openTerm(f.kind === 'flag' ? 'move' : 'foot', f.kind === 'flag' ? 'flag' : f.kind)}>
