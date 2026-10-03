@@ -233,3 +233,71 @@ function annotate(holds, body, startL, startR, steps) {
     }
   })
 }
+
+// ---- 난이도 추정과 루트 생성 (GenClimb의 "난이도에 맞춘 루트 생성" 아이디어를 사진 속 벽에 맞게 규칙으로 구현) ----
+
+// 경로의 V등급을 어림함: 손 이동 거리(팔 벌린 길이 대비), 점프, 잡기 어려운 홀드가 많을수록 어려움. 정확한 등급이 아니라 추정값
+export function estimateGrade(route, holds, body) {
+  // 매칭(두 손 모으기)은 짧은 정리 동작이라 빼고, 루트 생성과 같은 기준(팔 벌린 길이 대비 손 사이 거리)으로 계산
+  const moves = route?.steps.filter((s) => s.move !== 'match') ?? []
+  if (!moves.length) return null
+  const ratios = moves.map((s) => s.reach / body.span)
+  const mean = ratios.reduce((a, b) => a + b, 0) / ratios.length
+  const max = Math.max(...ratios)
+  const grip = moves.reduce((a, s) => a + Math.max(0, HOLD_TYPES[holds[s.to].type]?.penalty ?? 0), 0) / moves.length
+  const dynos = moves.filter((s) => s.dyno).length
+  const v = (mean - 0.3) / 0.045 + Math.max(0, (max - 0.6) / 0.045) * 0.3 + dynos + grip * 1.5
+  return Math.max(0, Math.min(10, Math.round(v)))
+}
+
+// 간단한 시드 난수(같은 시드면 같은 루트)
+function rng(seed) {
+  let s = seed % 2147483647 || 1
+  return () => (s = (s * 16807) % 2147483647) / 2147483647
+}
+
+// all: 미터 단위 홀드 전체(toMeters 결과), 목표 V등급에 맞는 손 이동 거리로 아래에서 위로 손 홀드를 고름.
+// 반환: { hands: [인덱스...], start: [인덱스 1~2개], finish: 인덱스, feet: [발 전용 인덱스...] } 또는 null
+export function generateRoute(all, body, grade, seed = 1) {
+  if (all.length < 4) return null
+  const rand = rng(seed * 7919 + grade * 104729)
+  const span = body.span
+  const target = span * (0.3 + 0.045 * grade) // 손 이동 목표 거리: 난이도가 높을수록 멀리
+  const maxD = Math.min(body.maxReach, target * 1.35)
+  const ys = all.map((h) => h.my)
+  const lo = Math.min(...ys)
+  const hi = Math.max(...ys)
+  // 시작: 아래쪽 30% 안에서 무작위 하나, 그 옆에 손이 닿는 홀드가 있으면 두 손 시작
+  const low = all.filter((h) => h.my < lo + (hi - lo) * 0.3 && h.my > 0.5 && h.my < 1.9)
+  if (!low.length) return null
+  const first = low[Math.floor(rand() * low.length)]
+  const pair = all.filter((h) => h !== first && Math.abs(h.my - first.my) < 0.35 && Math.hypot(h.mx - first.mx, h.my - first.my) < span * 0.5 && Math.hypot(h.mx - first.mx, h.my - first.my) > 0.2)
+  const second = pair.length ? pair[Math.floor(rand() * pair.length)] : null
+  const hands = [first.id, ...(second ? [second.id] : [])]
+  const used = new Set(hands)
+  let cur = second && second.my > first.my ? second : first
+  // 위로 올라가며 다음 손 홀드를 무작위로(목표 거리에 가까울수록 잘 뽑히게) 고름
+  for (let guard = 0; guard < 40; guard++) {
+    if (cur.my > hi - 0.35) break
+    const cand = all.filter((h) => !used.has(h.id) && h.my > cur.my + 0.12 && Math.hypot(h.mx - cur.mx, h.my - cur.my) <= maxD)
+    if (!cand.length) break
+    const w = cand.map((h) => {
+      const d = Math.hypot(h.mx - cur.mx, h.my - cur.my)
+      return Math.exp(-(((d - target) / (0.18 * span)) ** 2)) * (0.3 + rand())
+    })
+    let r = rand() * w.reduce((a, b) => a + b, 0)
+    let k = 0
+    while (k < w.length - 1 && (r -= w[k]) > 0) k++
+    cur = cand[k]
+    hands.push(cur.id)
+    used.add(cur.id)
+  }
+  if (hands.length < 4) return null
+  // 발 전용: 손 홀드 아래쪽(다리 길이 범위)에 있는, 손으로 안 쓰는 홀드
+  const leg = 0.47 * (span / 1) // 팔 벌린 길이 ≈ 키
+  const feet = all
+    .filter((h) => !used.has(h.id))
+    .filter((h) => hands.some((id) => { const t = all[id]; return h.my < t.my - 0.4 && h.my > t.my - 1.2 - leg * 0.5 && Math.abs(h.mx - t.mx) < 0.7 }))
+    .map((h) => h.id)
+  return { hands, start: hands.slice(0, second ? 2 : 1), finish: hands[hands.length - 1], feet }
+}

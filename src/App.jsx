@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { detectAllHolds, detectHolds, pickTarget, sampleImage } from './utils/detect.js'
 import { FEET, HOLD_ORDER, HOLD_TYPES, MOVES, estimateHoldType } from './utils/glossary.js'
 import { buildSequence } from './utils/stickman.js'
-import { LEVELS, bodyModel, findRoute, toMeters } from './utils/route.js'
+import { LEVELS, bodyModel, estimateGrade, findRoute, generateRoute, toMeters } from './utils/route.js'
 
 // 사진 없이 체험할 수 있는 데모 벽 (초록색 = 우리 루트, 나머지는 다른 루트)
 function makeDemoWall() {
@@ -390,6 +390,7 @@ export default function App() {
   const idx = frame.k === 'start' ? -1 : frame.i // 현재 보고 있는 동작 번호(0부터)
   const step = idx >= 0 ? plan?.route?.steps[idx] : null
   const hardCount = plan?.route?.steps.filter((s) => s.hard).length ?? 0
+  const grade = plan?.route ? estimateGrade(plan.route, plan.m, model) : null
   const dynoCount = plan?.route?.steps.filter((s) => s.dyno).length ?? 0
   const fig = frame.fig ?? null
   const isFoot = frame.k === 'foot'
@@ -424,6 +425,33 @@ export default function App() {
   const k = photo ? photo.aspect / wallWidth : 1
   const sv = (p) => `${p.x * k},${1 - p.y * k}`
 
+  // 루트 생성(GenClimb 아이디어): 사진 속 모든 홀드에서 고른 난이도에 맞는 루트를 만듦. 누를 때마다 다른 루트
+  const [genOpen, setGenOpen] = useState(false)
+  const [genGrade, setGenGrade] = useState(2)
+  const [genSeed, setGenSeed] = useState(1)
+  const [genMsg, setGenMsg] = useState('')
+  const generate = (grade) => {
+    if (!photo) return
+    const m = toMeters(allHolds, wallWidth, photo.aspect)
+    let res = null
+    let seed = genSeed
+    for (let tries = 0; tries < 12 && !res; tries++) res = generateRoute(m, model, grade, ++seed)
+    setGenSeed(seed)
+    if (!res) {
+      setGenMsg('이 사진에서는 그 난이도의 루트를 만들지 못했어요. 벽 너비나 난이도를 바꿔 보세요')
+      return
+    }
+    const role = (i) => (res.start.includes(i) ? 'start' : i === res.finish ? 'finish' : undefined)
+    setHolds([
+      ...res.hands.map((i) => ({ ...allHolds[i], role: role(i) })),
+      ...res.feet.map((i) => ({ ...allHolds[i], footOnly: true })),
+    ])
+    setTarget({ kind: 'gen' })
+    setFrameIdx(0)
+    setMode('edit')
+    setGenMsg(`손 홀드 ${res.hands.length}개 · 발 전용 ${res.feet.length}개로 V${grade} 목표 루트를 만들었어요`)
+  }
+
   const resetPick = () => {
     setTarget(null)
     setHolds([])
@@ -453,6 +481,7 @@ export default function App() {
         <h1>🧗 클라이밍 도우미 <small className="ver">{__APP_VERSION__}</small></h1>
         {photo && tab === 'course' && (
           <div className="actions">
+            <button className={genOpen ? 'icon on' : 'icon'} onClick={() => setGenOpen(!genOpen)} aria-label="루트 생성">🎲</button>
             {target && <button className="icon" onClick={resetPick} aria-label="홀드 색 다시 고르기">🎨</button>}
             <button className="icon" onClick={() => fileRef.current.click()} aria-label="새 사진">📷</button>
           </div>
@@ -555,6 +584,18 @@ export default function App() {
             )}
           </div>
 
+          {photo && genOpen && (
+            <div className="genbar">
+              <div className="grades">
+                {[0, 1, 2, 3, 4, 5, 6].map((g) => (
+                  <button key={g} className={genGrade === g ? 'on' : ''} onClick={() => setGenGrade(g)}>V{g}</button>
+                ))}
+              </div>
+              <button className="genbtn" onClick={() => generate(genGrade)}>🎲 루트 생성</button>
+              {genMsg && <small>{genMsg}</small>}
+            </div>
+          )}
+
           {photo && target && (
             <div className="modes">
               <button className={mode === 'edit' ? 'on' : ''} onClick={() => setMode('edit')}>✋ 편집</button>
@@ -576,7 +617,7 @@ export default function App() {
                     <button className="nav play" onClick={togglePlay} aria-label={playing ? '멈춤' : '재생'}>{playing ? '❚❚' : '⏵'}</button>
                     <div className="stepinfo">
                       <b>{frame.k === 'start' ? '출발 자세' : frame.k === 'jump' ? `${idx + 1} / ${nSteps} · 점프 순간` : isFoot ? `${idx + 1} / ${nSteps} · 발 옮기기` : `${idx + 1} / ${nSteps} · 손${step?.dyno ? ' 착지' : ''}`}</b>
-                      <small>힘든 동작 {hardCount}번{dynoCount ? ` · 점프 ${dynoCount}번(점선)` : ''} · 발 홀드는 하늘색</small>
+                      <small>{grade !== null && `난이도 추정 V${grade} · `}힘든 동작 {hardCount}번{dynoCount ? ` · 점프 ${dynoCount}번(점선)` : ''} · 발 홀드는 하늘색</small>
                     </div>
                     <button className="nav" disabled={fi >= frames.length - 1} onClick={() => { setPlaying(false); setFrameIdx(fi + 1) }}>▶</button>
                   </div>
