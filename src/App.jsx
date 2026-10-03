@@ -48,7 +48,8 @@ function Stickman({ p, sv, headR, hard, label }) {
   const draw = (stroke, w) => (
     <>
       <polyline {...halo} stroke={stroke} strokeWidth={w} points={line([p.shL, p.shR])} />
-      <polyline {...halo} stroke={stroke} strokeWidth={w} points={line([{ x: (p.shL.x + p.shR.x) / 2, y: p.shL.y }, p.hip])} />
+      {/* 몸통: 어깨 양쪽에서 같은 쪽 골반으로 이어 사다리꼴로 그림 */}
+      <polyline {...halo} stroke={stroke} strokeWidth={w} points={line([p.shL, p.hipL, p.hipR, p.shR])} />
       <polyline {...halo} stroke={stroke} strokeWidth={w} points={line([p.hipL, p.hipR])} />
       {limbs.map((l, i) => <polyline key={i} {...halo} stroke={stroke} strokeWidth={w} points={line(l)} />)}
     </>
@@ -100,8 +101,53 @@ function BodyFigure({ height, wingspan }) {
   )
 }
 
-// 졸라맨 관절을 이전 자세에서 새 자세로 부드럽게 옮겨 그림(올라가는 애니메이션)
-function useTweenPose(target, ms = 450) {
+// 두 자세 사이를 사람이 움직이듯 이어 줌: 먼저 몸(엉덩이·어깨)을 옮기고, 그다음 움직이는 팔다리 하나를 들어 호를 그리며 옮김
+const LIMBS = {
+  hl: ['elL', 'hl'],
+  hr: ['elR', 'hr'],
+  footL: ['kneeL', 'footL'],
+  footR: ['kneeR', 'footR'],
+}
+const ease = (t) => (t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2)
+const seg = (t, a, b) => ease(Math.min(1, Math.max(0, (t - a) / (b - a))))
+export function blendPose(from, to, t) {
+  // 가장 많이 움직인 손이나 발이 이번 동작의 팔다리
+  let mover = null
+  let most = 0.03
+  for (const key of Object.keys(LIMBS)) {
+    const d = Math.hypot(to[key].x - from[key].x, to[key].y - from[key].y)
+    if (d > most) {
+      most = d
+      mover = key
+    }
+  }
+  const moving = new Set(mover ? LIMBS[mover] : [])
+  const center = { x: (to.hip.x + to.neck.x) / 2, y: (to.hip.y + to.neck.y) / 2 }
+  const p = {}
+  for (const key of Object.keys(to)) {
+    const a = from[key] ?? to[key]
+    const b = to[key]
+    const u = moving.has(key) ? seg(t, 0.3, 1) : seg(t, 0, mover ? 0.6 : 1) // 몸 먼저(0~60%), 팔다리는 나중(30~100%)
+    let x = a.x + (b.x - a.x) * u
+    let y = a.y + (b.y - a.y) * u
+    if (moving.has(key)) {
+      // 들어 올려 옮김: 발은 위로 살짝, 손은 몸 바깥쪽으로 둥글게
+      const lift = Math.sin(Math.PI * u) * Math.min(0.12, 0.25 * most) * (key === mover ? 1 : 0.6)
+      if (mover.startsWith('foot')) y += lift
+      else {
+        const ox = x - center.x
+        const oy = y - center.y
+        const n = Math.hypot(ox, oy) || 1
+        x += (ox / n) * lift
+        y += (oy / n) * lift
+      }
+    }
+    p[key] = { x, y }
+  }
+  return p
+}
+
+function useTweenPose(target, ms = 700) {
   const [shown, setShown] = useState(target)
   const fromRef = useRef(target)
   const shownRef = useRef(target)
@@ -122,13 +168,7 @@ function useTweenPose(target, ms = 450) {
     const t0 = performance.now()
     const tick = (now) => {
       const t = Math.min(1, (now - t0) / ms)
-      const e = t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2 // 천천히 시작해서 천천히 멈춤
-      const p = {}
-      for (const key of Object.keys(target)) {
-        const a = fromRef.current[key] ?? target[key]
-        const b = target[key]
-        p[key] = { x: a.x + (b.x - a.x) * e, y: a.y + (b.y - a.y) * e }
-      }
+      const p = blendPose(fromRef.current, target, t)
       shownRef.current = p
       setShown(p)
       if (t < 1) raf = requestAnimationFrame(tick)
@@ -369,7 +409,7 @@ export default function App() {
       setPlaying(false)
       return
     }
-    const id = setTimeout(() => setFrameIdx(fi + 1), frame.k === 'jump' ? 550 : frame.k === 'foot' ? 700 : 950)
+    const id = setTimeout(() => setFrameIdx(fi + 1), frame.k === 'jump' ? 650 : frame.k === 'foot' ? 950 : 1200)
     return () => clearTimeout(id)
   }, [playing, fi, frames.length, frame.k])
   const togglePlay = () => {
