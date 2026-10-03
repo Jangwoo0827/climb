@@ -66,7 +66,7 @@ def swap_bg(im, bg):
     """가장자리와 이어진 흰 배경을 벽 사진 조각으로 바꿈(물체 안쪽의 흰 부분은 그대로)"""
     w, h = im.size
     px = im.load()
-    is_bg = lambda c: min(c) > 205 and max(c) - min(c) < 30
+    is_bg = lambda c: min(c) > 238 and max(c) - min(c) < 15  # 거의 순백색만 배경(연회색 볼륨 면은 남김)
     mask = Image.new('L', (w, h), 0)
     mp = mask.load()
     stack = [(x, y) for x in range(w) for y in (0, h - 1)] + [(x, y) for y in range(h) for x in (0, w - 1)]
@@ -80,7 +80,7 @@ def swap_bg(im, bg):
         stack += [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)]
     from PIL import ImageFilter
     mask = mask.filter(ImageFilter.GaussianBlur(1.2))
-    return Image.composite(bg, im, mask)
+    return Image.composite(bg, im, mask), len(seen) / (w * h)
 
 
 def read_names(path):
@@ -146,6 +146,7 @@ def main():
 
     # 직접 찍은 사진(extra/<종류>/): 가운데를 정사각형으로 잘라 같은 크기로
     bg_rand = random.Random(7)
+    swapped, kept = [], []
     if os.path.isdir(EXTRA):
         for cls in sorted(os.listdir(EXTRA)):
             d = os.path.join(EXTRA, cls)
@@ -159,8 +160,19 @@ def main():
                 stem = os.path.splitext(fn)[0]
                 if has_plain_bg(im):
                     # 흰 배경 제품 사진: 배경을 벽 사진 조각으로 바꾼 두 장으로(모델이 '흰 배경'을 외우지 않게)
+                    made = []
                     for j, bg in enumerate(wall_patches(2, bg_rand)):
-                        crops.setdefault(cls, []).append((f'extra_{stem}_bg{j}.jpg', swap_bg(im, bg)))
+                        out, frac = swap_bg(im, bg)
+                        made.append((f'extra_{stem}_bg{j}.jpg', out, frac))
+                    frac = made[0][2] if made else 0
+                    # 배경으로 바뀐 부분이 너무 적거나(배경을 못 찾음) 너무 많으면(물체까지 지움) 원본을 그대로 씀
+                    if 0.15 <= frac <= 0.92:
+                        for name, out, _ in made:
+                            crops.setdefault(cls, []).append((name, out))
+                        swapped.append((stem, frac))
+                    else:
+                        crops.setdefault(cls, []).append((f'extra_{stem}.jpg', im))
+                        kept.append((stem, frac))
                 else:
                     crops.setdefault(cls, []).append((f'extra_{stem}.jpg', im))
 
@@ -191,6 +203,10 @@ def main():
     print('\n종류별 사진 수 (학습 / 테스트):')
     for cls, (tr, te) in sorted(total.items(), key=lambda x: -sum(x[1])):
         print(f'  {cls:8s} {tr:5d} / {te:4d}')
+    if swapped or kept:
+        print(f'\n흰 배경을 벽으로 바꾼 사진 {len(swapped)}장, 배경을 못 나눠 원본 그대로 둔 사진 {len(kept)}장')
+        for stem, frac in kept:
+            print(f'  원본 유지: {stem} (배경 비율 {frac:.0%})')
     print('\n결과 폴더:', OUT)
 
 
