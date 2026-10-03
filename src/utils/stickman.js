@@ -29,7 +29,7 @@ function joint(a, b, l1, l2, side, avoid, down = 0.8) {
   const c2 = { x: base.x + uy * h, y: base.y - ux * h }
   // 몸통에서 멀고, 아래로 처지는 쪽(사람 팔꿈치·무릎은 위로 꺾이지 않음)을 고름
   const score = (c) =>
-    (avoid ? Math.min(0.15, distSeg(c, avoid[0], avoid[1])) - (distSeg(c, avoid[0], avoid[1]) < 0.035 ? 1 : 0) : 0) + ((c.x - base.x) * side > 0 ? 0.03 : 0) + (base.y - c.y) * down - (down < 0.5 && (c.y < Math.min(a.y, b.y) - 0.03 || c.y > a.y + 0.01) ? 1 : 0) - // 무릎은 발보다 아래, 엉덩이보다 위로 가지 않음
+    (avoid ? Math.min(0.15, distSeg(c, avoid[0], avoid[1])) - (distSeg(c, avoid[0], avoid[1]) < 0.035 ? 1 : 0) : 0) + ((c.x - base.x) * side > 0 ? 0.03 : 0) + (base.y - c.y) * down - (down < 0.5 && (c.y < Math.min(a.y, b.y) - 0.15 || c.y > a.y + 0.01) ? 1 : 0) - // 무릎은 발보다 아래, 엉덩이보다 위로 가지 않음
      (c.y < 0 ? 5 : 0)
   return score(c1) >= score(c2) ? c1 : c2
 }
@@ -123,7 +123,8 @@ export function figureAt(route, holds, body, heightM, stepIndex, phase = 'land')
   const solve = (L, R, prev, opts, relax = 0) => {
     const near = relax ? 0.35 : 0.6 // 발이 엉덩이에 이보다 가까우면(다리 길이 비율) 무릎이 접혀 부자연스러움
     // 팔이 몸을 가로지르지 않도록 손은 x 순서대로 왼손/오른손으로 배정
-    const pts = [holds[L], holds[R]].map((h) => ({ x: h.mx, y: h.my })).sort((a, b) => a.x - b.x)
+    // 매칭(두 손이 한 홀드)이면 손을 홀드 양쪽으로 살짝 벌려 잡음
+    const pts = (L === R ? [{ x: holds[L].mx - 0.04, y: holds[L].my }, { x: holds[L].mx + 0.04, y: holds[L].my }] : [holds[L], holds[R]].map((h) => ({ x: h.mx, y: h.my }))).sort((a, b) => a.x - b.x)
     const [hl, hr] = pts
     const mid = { x: (hl.x + hr.x) / 2, y: (hl.y + hr.y) / 2 }
     const minHipY = FOOT_CLEAR + (relax ? 0.25 : 0.45) * leg // 발(바닥에서 띄움)보다 엉덩이가 충분히 높아야 무릎이 엉덩이 위로 접히지 않음
@@ -146,12 +147,12 @@ export function figureAt(route, holds, body, heightM, stepIndex, phase = 'land')
           if (p.y < FOOT_CLEAR) return // 바닥에 닿는 낮은 홀드는 제외
           if (d > 0.95 * leg || d < near * leg || p.y > hip.y - 0.3 * leg) return // 너무 멀거나, 너무 가깝거나(무릎이 접힘), 엉덩이 근처보다 높은 홀드
           // 볼륨은 발판이 넓어 안정적이라 조금 유리하게 침
-          feet.push({ p, c: ((d - 0.82 * leg) / leg) ** 2 * 4 + (p.y > hip.y - 0.25 * leg ? 0.3 : 0) - (h.type === 'volume' ? 0.25 : 0), id: h.id })
+          feet.push({ p, c: -0.6 + ((d - 0.72 * leg) / leg) ** 2 * 4 + (p.y > hip.y - 0.25 * leg ? 0.3 : 0) - (h.type === 'volume' ? 0.25 : 0), id: h.id })
         })
         for (const s of [-1, 1]) {
           // 낮은 자리에서는 바닥에서 띄운 높이(FOOT_CLEAR)의 벽면에 발을 붙임
           const p = { x: hx + s * 0.17 * heightM, y: Math.max(FOOT_CLEAR, hy - 0.78 * leg) }
-          if (dist(p, hip) <= 0.98 * leg && dist(p, hip) >= near * leg) feet.push({ p, c: 2.5, id: null }) // 벽면 스미어는 홀드가 없을 때만: 크게 불리
+          if (dist(p, hip) <= 0.98 * leg && dist(p, hip) >= near * leg) feet.push({ p, c: 8, id: null }) // 벽면 스미어는 발 닿는 홀드가 하나도 없을 때만
         }
         // 삼각형 기본자세: 두 발을 넓게 벌려 밑변을 만들고 엉덩이(무게중심)가 그 밑변 위에 오게 하는 발 조합을 고름
         feet.sort((a, b) => a.c - b.c)
@@ -160,17 +161,22 @@ export function figureAt(route, holds, body, heightM, stepIndex, phase = 'land')
         let f2 = null
         let footCost = Infinity
         for (let i = 0; i < cand.length; i++)
-          for (let j = i + 1; j < cand.length; j++) {
+          for (let j = i; j < cand.length; j++) {
             const a = cand[i]
             const b = cand[j]
             const spread = Math.abs(a.p.x - b.p.x)
-            if (dist(a.p, b.p) < 0.16 * heightM) continue // 두 발이 한 점에 모이지 않게
+            // 발 매칭: 홀드가 하나뿐이면 두 발을 같은 홀드에 올림(허공에 발을 두지 않음)
+            const footMatch = i === j
+            if (footMatch && a.id === null) continue
+            if (!footMatch && dist(a.p, b.p) < 0.16 * heightM) continue // 다른 두 자리는 골반 너비 이상 벌림
             let c = a.c + b.c
-            c += ((spread - 0.35 * heightM) / heightM) ** 2 * 30 // 밑변 너비: 키의 35% 정도
+            if (footMatch) c += ((dist(a.p, hip) - 0.88 * leg) / leg) ** 2 * 20 // 발을 모으면 다리를 펴서 무릎이 마름모로 벌어지지 않게
+            if (footMatch) c += 3 // 두 발을 벌린 삼각형보다는 덜 안정적
+            if (!footMatch) c += ((spread - 0.35 * heightM) / heightM) ** 2 * 30 // 밑변 너비: 키의 35% 정도
             if (spread > 0.6 * heightM) c += 4 // 다리를 일자로 찢는 자세는 거의 불가능
             const lo = Math.min(a.p.x, b.p.x)
             const hi = Math.max(a.p.x, b.p.x)
-            if (hx < lo || hx > hi) c += 3 + (Math.min(Math.abs(hx - lo), Math.abs(hx - hi)) / torso) * 6 // 무게중심이 밑변 밖이면 크게 감점
+            if (!footMatch && (hx < lo || hx > hi)) c += 3 + (Math.min(Math.abs(hx - lo), Math.abs(hx - hi)) / torso) * 6 // 무게중심이 밑변 밖이면 크게 감점
             if (c < footCost) {
               footCost = c
               f1 = a
@@ -194,7 +200,7 @@ export function figureAt(route, holds, body, heightM, stepIndex, phase = 'land')
             const target = armTarget(opts?.move, isMoving)
             const d = dist({ x: S.x + dx, y: S.y }, h)
             if (d > 0.97 * arm) cost += 40 * ((d - 0.97 * arm) / arm + 0.05)
-            else cost += ((d - target * arm) / arm) ** 2 * 3
+            else cost += ((d - target * arm) / arm) ** 2 * 22 // 팔을 곧게 펴고 엉덩이를 내려 뼈로 매달림(팔 힘을 아낌)
             if (wrong(h)) cost += 4 // 손이 가슴 앞이나 반대편이면 팔이 몸에 걸림
             // 실제 팔꿈치 위치를 계산해 위로 꺾이거나(치킨 윙) 몸통에 닿으면 감점
             const sh = { x: S.x + dx, y: S.y }
@@ -206,7 +212,7 @@ export function figureAt(route, holds, body, heightM, stepIndex, phase = 'land')
 
           cost += ((hx - fx) / torso) ** 2 * 1.2 // 체중이 발 위에 실리도록
           const footY = Math.min(f1.p.y, f2.p.y)
-          cost += Math.max(0, 0.7 * leg - (hy - footY)) / leg * 4 // 엉덩이가 발에 너무 내려앉으면(웅크림) 감점: 다리를 펴서 섬
+          cost += Math.max(0, 0.45 * leg - (hy - footY)) / leg * 4 // 엉덩이가 발에 완전히 주저앉는 것만 감점(적당히 낮춘 엉덩이는 안정적)
           cost += ((hx - mid.x) / torso) ** 2 * 0.3
           cost += (lean / torso) ** 2 * 0.5
           if (prev) cost += 1.5 * dist(hip, prev) ** 2
@@ -247,6 +253,11 @@ export function figureAt(route, holds, body, heightM, stepIndex, phase = 'land')
   const hipL = add(hip, { x: -0.05 * heightM, y: 0 })
   const hipR = add(hip, { x: 0.05 * heightM, y: 0 })
   const feet = [{ ...s.f1 }, { ...s.f2 }]
+  // 발 매칭이면 같은 홀드 양쪽에 발을 나란히 올림
+  if (s.f1 === s.f2) {
+    feet[0].p = { x: s.f1.p.x - 0.04, y: s.f1.p.y }
+    feet[1].p = { x: s.f1.p.x + 0.04, y: s.f1.p.y }
+  }
 
   // 플래깅: 한 발만 홀드에 딛고, 다른 다리는 이동 반대쪽으로 쭉 뻗어 균형을 잡음
   const dir = st ? Math.sign(st.dx || 1) : 0
@@ -264,6 +275,7 @@ export function figureAt(route, holds, body, heightM, stepIndex, phase = 'land')
   const [footL, footR] = feet
   const kindOf = (f) => {
     if (f.flag) return 'flag'
+    if (s.f1 === s.f2 && f.id !== null) return 'footmatch'
     if (f.id !== null && holds[f.id].type === 'volume') return 'volume'
     if (f.id !== null) return f.p.y > hip.y - 0.3 * leg ? 'heelhook' : 'edging'
     return 'smear'

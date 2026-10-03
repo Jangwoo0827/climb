@@ -18,6 +18,11 @@ const scenes = {
 }
 let total = 0
 let smearBoth = 0
+let oneFoot = 0
+let steps = 0
+let longMoves = 0
+let bentArms = 0
+let footMatch = 0
 let bad = 0
 for (const [name, sc] of Object.entries(scenes))
   for (const W of [3.5, 5])
@@ -29,6 +34,8 @@ for (const [name, sc] of Object.entries(scenes))
         const r = findRoute(holds, body, sc.start, sc.fin)
         if (!r) continue
         const arm = (body.span - 0.23 * H) / 2
+        steps += r.steps.length
+        longMoves += r.steps.filter((st) => !st.dyno && st.reach > body.comfort * 1.15).length
         for (let i = -1; i < r.steps.length; i++)
           for (const phase of i >= 0 && r.steps[i].dyno ? ['land', 'jump'] : ['land']) {
             total++
@@ -39,7 +46,8 @@ for (const [name, sc] of Object.entries(scenes))
             for (const k of ['footL', 'footR']) if (p[k].y < 0.0999) issues.push(k + ' 바닥에 닿음')
             if (phase === 'land') {
               for (const h of [p.hl, p.hr]) if (h.y < p.hip.y - 1e-6 && h.y > 0.12) issues.push('손이 허리 아래')
-              if (Math.hypot(p.footL.x - p.footR.x, p.footL.y - p.footR.y) < 0.16 * H - 1e-6) issues.push('두 발이 한 점')
+              const fm = fig.feetInfo.every((f) => f.kind === 'footmatch')
+              if (!fm && Math.hypot(p.footL.x - p.footR.x, p.footL.y - p.footR.y) < 0.16 * H - 1e-6) issues.push('두 발이 한 점')
               for (const [k, sh, h] of [['elL', p.shL, p.hl], ['elR', p.shR, p.hr]]) if (p[k].y > Math.max(sh.y, h.y) + 0.02) issues.push(k + ' 위로 꺾임')
               const sitStart = Math.min(p.hl.y, p.hr.y) < 0.1 + 0.65 * 0.47 * H + 0.05 // 손이 너무 낮으면 앉아서 출발(싯 스타트): 무릎이 엉덩이보다 높은 게 정상
               // 발을 높이 올린 하이 스텝(발이 엉덩이 근처)은 무릎이 엉덩이보다 높은 게 정상
@@ -49,12 +57,17 @@ for (const [name, sc] of Object.entries(scenes))
               const ang = (a, b, c) => { const v1 = [a.x - b.x, a.y - b.y]; const v2 = [c.x - b.x, c.y - b.y]; return Math.acos(Math.max(-1, Math.min(1, (v1[0] * v2[0] + v1[1] * v2[1]) / (Math.hypot(...v1) * Math.hypot(...v2) || 1)))) * 180 / Math.PI }
               if (!sitStart) for (const [k, hp, f] of [['kneeL', p.hipL, p.footL], ['kneeR', p.hipR, p.footR]]) if (ang(hp, p[k], f) < 50) issues.push(k + ' 너무 접힘')
               if (Math.abs(p.footL.x - p.footR.x) > 0.62 * H && fig.move !== 'flag') issues.push('다리 찢음')
-              if (fig.feetInfo.filter((f) => f.kind === 'smear').length === 2) smearBoth++
+              // 손이 어깨 위에 있는데 팔을 75% 미만으로 굽힌 매달림(팔 힘 낭비)
+              for (const [sh, h] of [[p.shL, p.hl], [p.shR, p.hr]]) if (h.y > sh.y && Math.hypot(sh.x - h.x, sh.y - h.y) < 0.75 * arm && fig.move !== 'lockoff' && fig.move !== 'mantle') bentArms++
+              const onHold = fig.feetInfo.filter((f) => f.id !== null).length
+              if (onHold === 0) smearBoth++
+              if (fm) footMatch++
+              if (onHold === 1) oneFoot++
               // 삼각형 기본자세: 엉덩이가 두 발 사이(밑변 안)에 있어야 함(플래깅·싯 스타트 제외)
               const lo = Math.min(p.footL.x, p.footR.x) - 0.05
               const hi = Math.max(p.footL.x, p.footR.x) + 0.05
               const flag = fig.move === 'flag'
-              if (!flag && !sitStart && (p.hip.x < lo || p.hip.x > hi)) issues.push('무게중심이 두 발 밖')
+              if (!flag && !fm && !sitStart && (p.hip.x < lo || p.hip.x > hi)) issues.push('무게중심이 두 발 밖')
             }
             if (issues.length) {
               bad++
@@ -62,5 +75,5 @@ for (const [name, sc] of Object.entries(scenes))
             }
           }
       }
-console.log('자세', total, '문제', bad, '· 두 발 모두 홀드 없이 벽에 붙인 자세', smearBoth)
+console.log('자세', total, '문제', bad, '· 발이 홀드에 0개', smearBoth, '· 1개', oneFoot, '· 손 이동', steps, '중 크게 뻗는 이동', longMoves, '· 팔 굽혀 매달림', bentArms, '· 발 매칭', footMatch)
 process.exitCode = bad ? 1 : 0

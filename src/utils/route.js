@@ -122,12 +122,13 @@ export function findRoute(holds, body, startIds, finishIds) {
       const fixed = hand === 'L' ? r : l
       const cur = hand === 'L' ? l : r
       for (let t = 0; t < n; t++) {
-        if (t === cur || t === fixed) continue
+        if (t === cur) continue
+        const match = t === fixed // 매칭: 반대 손이 잡은 홀드로 두 손을 모음
         const d = dist(holds[t], holds[fixed])
         if (d > body.jumpReach) continue
         const dy = holds[t].my - holds[cur].my
         // 팔이 닿지 않거나, 손을 허리 위로 유지할 수 없을 만큼 높이 차가 크면 점프(양손을 목표 홀드로)
-        const dyno = d > body.maxReach || Math.abs(holds[t].my - holds[fixed].my) > body.maxVertical
+        const dyno = !match && d > body.maxReach || Math.abs(holds[t].my - holds[fixed].my) > body.maxVertical
         if (dyno && dy < -0.05) continue // 점프는 위나 옆으로만
         let cost
         if (dyno) {
@@ -136,8 +137,11 @@ export function findRoute(holds, body, startIds, finishIds) {
         } else {
           // 손 교차 방지: 왼손이 오른손보다 너무 오른쪽이면 감점
           const cross = hand === 'L' ? holds[t].mx - holds[fixed].mx : holds[fixed].mx - holds[t].mx
-          cost = 1 + Math.max(0, d - body.comfort) * 8 // 팔이 뻗을수록 비용 증가
-          cost += Math.max(0, dist(holds[t], holds[cur]) - body.comfort * 0.7) * 6 // 한 손이 너무 멀리 건너뛰면 감점
+          // 멀리 뻗을수록 제곱으로 비싸짐: 한 번에 멀리 가기보다 중간 홀드나 매칭으로 나눠 가는 쪽이 싸게 됨
+          const travel = dist(holds[t], holds[cur])
+          cost = 0.6 + (travel / body.comfort) ** 2 * 1.2
+          cost += (Math.max(0, d - body.comfort * 0.8) / body.comfort) ** 2 * 12 // 두 손 사이가 벌어질수록 크게 감점
+          if (match) cost += 0.4 // 매칭은 한 동작을 더 쓰는 만큼 약간의 비용
           if (dy < 0) cost += -dy * body.level.downPenalty // 내려가는 동작 억제
           if (dy > 0) cost -= Math.min(dy, 0.5) * 0.6 // 위로 가는 진행은 약간 보상
           if (cross > 0.25) cost += 2
@@ -173,11 +177,11 @@ export function findRoute(holds, body, startIds, finishIds) {
 }
 
 // 손 이동의 성격(동작 이름)을 정한다. dx, dy는 움직이는 손의 이동량(미터), d는 반대 손과의 거리
-function classifyMove({ dyno, hard, dx, dy, type }) {
+function classifyMove({ dyno, hard, dx, dy, type, match }) {
   if (dyno) return 'dyno'
+  if (match) return 'match'
   if (type === 'volume' && dy > 0.2) return 'mantle' // 볼륨 위로 올라서는 동작
   if (hard && dy > 0.25) return 'deadpoint'
-  if (Math.abs(dx) > 0.4 && Math.abs(dy) < 0.35) return 'flag'
   if (Math.abs(dx) > 0.25 && dy > 0.1) return 'dropknee'
   if (dy > 0.3) return 'lockoff'
   if (dy < -0.1) return 'downclimb'
@@ -198,7 +202,7 @@ function annotate(holds, body, startL, startR, steps) {
     const dx = b.mx - a.mx
     const dy = b.my - a.my
     const hard = !!s.dyno || d > body.comfort * 1.15
-    const move = classifyMove({ dyno: s.dyno, hard, dx, dy, type: b.type })
+    const move = classifyMove({ dyno: s.dyno, hard, dx, dy, type: b.type, match: s.to === other })
     const tips = [...MOVES[move].tips]
     if (!s.dyno && d > body.comfort * 1.15 && move !== 'deadpoint' && move !== 'lockoff') {
       tips.push('팔이 많이 뻗어요. 발을 먼저 높이 올려 다리로 밀어주세요')

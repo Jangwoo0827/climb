@@ -351,6 +351,16 @@ export default function App() {
     () => (plan?.route ? figureAt(plan.route, plan.m, model, height / 100, idx, frame.k === 'jump' ? 'jump' : 'land') : null),
     [plan, model, height, idx, frame.k],
   )
+  // 발 홀드 순서: 전체 경로를 따라가며 발이 처음 딛는 홀드에 발1, 발2 … 번호를 붙임
+  const footOrder = useMemo(() => {
+    if (!plan?.route) return []
+    const order = []
+    for (let i = -1; i < plan.route.steps.length; i++) {
+      const f = figureAt(plan.route, plan.m, model, height / 100, i)
+      for (const id of f.feetOnHolds) if (!order.includes(id)) order.push(id)
+    }
+    return order
+  }, [plan, model, height])
   const shownPose = useTweenPose(fig?.p ?? null)
   const [playing, setPlaying] = useState(false)
   // 재생: 처음부터 마지막 동작까지 자동으로 한 동작씩 넘김
@@ -447,7 +457,16 @@ export default function App() {
                   {usable.map((u, i) =>
                     u.type === 'volume' ? <circle key={'v' + i} cx={u.x * photo.aspect} cy={u.y} r="0.009" fill="#b0e0ff" stroke="#000" strokeWidth="0.003" /> : null,
                   )}
-                  {fig?.feetOnHolds.map((id) => (
+                  {footOrder.map((id, n) => {
+                    const h = plan.m[id]
+                    const now = fig?.feetOnHolds.includes(id)
+                    return (
+                      <text key={'fo' + id} x={h.nx * photo.aspect + 0.03} y={h.ny + 0.012} fontSize="0.026" fontWeight="800" fill={now ? '#4dd0ff' : '#9bdcf5'} opacity={now ? 1 : 0.7} stroke="#000" strokeWidth="0.005" paintOrder="stroke">
+                        발{n + 1}
+                      </text>
+                    )
+                  })}
+                  {[...new Set(fig?.feetOnHolds ?? [])].map((id) => (
                     <circle key={'f' + id} cx={plan.m[id].nx * photo.aspect} cy={plan.m[id].ny} r="0.026" fill="none" stroke="#4dd0ff" strokeWidth="0.007" />
                   ))}
                   {holds.map((h, i) =>
@@ -521,7 +540,7 @@ export default function App() {
                     )}
                     {fig?.feetInfo.map((f) => (
                       <button key={f.side} className="pill foot" onClick={() => openTerm(f.kind === 'flag' ? 'move' : 'foot', f.kind === 'flag' ? 'flag' : f.kind)}>
-                        {footLabel[f.side]} · {FEET[f.kind].name}
+                        {footLabel[f.side]} · {FEET[f.kind]?.name ?? f.kind}
                       </button>
                     ))}
                   </div>
