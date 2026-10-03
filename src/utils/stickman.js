@@ -157,41 +157,52 @@ export function figureAt(route, holds, body, heightM, stepIndex, phase = 'land')
       for (let hy = loY; hy <= hiY + 1e-9; hy += 0.05) {
         const hip = { x: hx, y: hy }
 
-        // 발: 먼저 이 엉덩이 위치에서 편한 발 자리(삼각형 밑변)를 정하고,
-        // 그 자리 가까이(SNAP 안)에 홀드가 있으면 그 홀드를 딛고, 없으면 그 자리에서 벽을 민다(스미어).
-        // 홀드에 맞춰 몸을 접는 대신, 자연스러운 몸 모양을 기준으로 홀드를 고른다.
+        // 발: 편한 발 자리(삼각형 밑변)를 기준으로, 다리를 적당히 편 범위 안의 홀드를 우선 딛고 없으면 벽을 민다(스미어)
         const SNAP = 0.3
         const fy = sit ? Math.max(FOOT_CLEAR + 0.1, hy) : Math.max(FOOT_CLEAR, hy - 0.78 * leg)
         const off = sit ? 0.2 * heightM : Math.min(0.17 * heightM, 1.1 * (hy - fy))
-        const taken = new Set([L, R])
-        const pickFoot = (ideal, other) => {
-          let best = null
-          holds.forEach((h) => {
-            if (taken.has(h.id) || h.my < FOOT_CLEAR) return
-            const p = { x: h.mx, y: h.my }
-            const dd = dist(p, ideal)
-            if (dd > SNAP) return
-            const d = dist(p, hip)
-            if (sit) {
-              // 싯 스타트: 무릎을 올리고 엉덩이 높이 근처의 앞쪽 홀드를 딛음
-              if (d > 0.9 * leg || d < 0.3 * leg || p.y > hip.y + 0.15 * leg) return
-            } else {
-              if (d > 0.97 * leg || d < near * leg || p.y > hip.y - 0.3 * leg) return
-              if (Math.abs(p.x - hip.x) > 1.2 * (hip.y - p.y)) return // 다리를 옆으로 눕히지 않음
-            }
-            if (other && dist(p, other.p) < 0.16 * heightM) return // 두 발은 골반 너비 이상 벌림
-            const c = (dd / SNAP) ** 2 * 0.8 - (h.type === 'volume' ? 0.2 : 0)
-            if (!best || c < best.c) best = { p, c, id: h.id }
-          })
-          if (best) {
-            taken.add(best.id)
-            return best
+        // 발 후보: 다리를 적당히 편 거리·엉덩이 아래쪽 방향 안의 홀드 전부 + 편한 자리 두 곳의 벽 밀기(스미어)
+        const idealL = { x: hx - off, y: fy }
+        const idealR = { x: hx + off, y: fy }
+        const cands = [
+          { p: idealL, c: 6, id: null },
+          { p: idealR, c: 6, id: null },
+        ]
+        holds.forEach((h) => {
+          if (h.id === L || h.id === R || h.my < FOOT_CLEAR) return
+          const p = { x: h.mx, y: h.my }
+          const d = dist(p, hip)
+          if (sit) {
+            // 싯 스타트: 무릎을 올리고 엉덩이 높이 근처의 앞쪽 홀드를 딛음
+            if (d > 0.9 * leg || d < 0.3 * leg || p.y > hip.y + 0.15 * leg) return
+          } else {
+            if (d > 0.97 * leg || d < (relax ? near : 0.68) * leg || p.y > hip.y - 0.3 * leg) return // 다리를 적당히 편 거리 안(무릎이 접히지 않게)
+            if (Math.abs(p.x - hip.x) > 1.2 * (hip.y - p.y)) return // 다리를 옆으로 눕히지 않음
           }
-          return { p: ideal, c: 2.5, id: null } // 홀드가 없으면 편한 자리에서 벽을 밀어 버팀
-        }
-        const f1 = pickFoot({ x: hx - off, y: fy })
-        const f2 = pickFoot({ x: hx + off, y: fy }, f1)
-        const footCost = f1.c + f2.c
+          const dd = Math.min(dist(p, idealL), dist(p, idealR))
+          cands.push({ p, c: (dd / SNAP) ** 2 * 0.5 - (h.type === 'volume' ? 0.2 : 0), id: h.id })
+        })
+        // 두 발을 짝으로 고름: 서로 겹치지 않고, 무게중심(엉덩이)이 두 발 사이에 오는 조합
+        let f1 = null
+        let f2 = null
+        let footCost = Infinity
+        for (let i = 0; i < cands.length; i++)
+          for (let j = i + 1; j < cands.length; j++) {
+            const a = cands[i]
+            const b = cands[j]
+            if (dist(a.p, b.p) < 0.16 * heightM) continue
+            const lo = Math.min(a.p.x, b.p.x)
+            const hi = Math.max(a.p.x, b.p.x)
+            let c = a.c + b.c
+            if (hx < lo - 0.03 || hx > hi + 0.03) c += 4 + (Math.min(Math.abs(hx - lo), Math.abs(hx - hi)) / torso) * 8
+            if (hi - lo > 0.58 * heightM) continue // 다리를 찢는 조합은 쓰지 않음
+            if (c < footCost) {
+              footCost = c
+              f1 = a
+              f2 = b
+            }
+          }
+        if (!f1) continue
         const fx = (f1.p.x + f2.p.x) / 2
 
         // 상체 기울기: 손 쪽으로 몸을 기울일 수 있음
@@ -208,7 +219,7 @@ export function figureAt(route, holds, body, heightM, stepIndex, phase = 'land')
             const target = armTarget(opts?.move, isMoving)
             const d = dist({ x: S.x + dx, y: S.y }, h)
             if (d > 0.97 * arm) cost += 200 * ((d - 0.97 * arm) / arm + 0.05) // 팔이 닿지 않는 자세는 사실상 금지
-            else cost += ((d - target * arm) / arm) ** 2 * 22 // 팔을 곧게 펴고 엉덩이를 내려 뼈로 매달림(팔 힘을 아낌)
+            else cost += ((d - target * arm) / arm) ** 2 * 30 // 팔을 곧게 펴고 엉덩이를 내려 뼈로 매달림(팔 힘을 아낌)
             if (wrong(h)) cost += 4 // 손이 가슴 앞이나 반대편이면 팔이 몸에 걸림
             // 실제 팔꿈치 위치를 계산해 위로 꺾이거나(치킨 윙) 몸통에 닿으면 감점
             const sh = { x: S.x + dx, y: S.y }
