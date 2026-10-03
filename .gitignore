@@ -3,3 +3,5 @@ dist
 android/app/build
 android/.gradle
 dataset/raw/
+dataset/holds/
+dataset/extra/
