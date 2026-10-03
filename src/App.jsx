@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { detectAllHolds, detectHolds, pickTarget, sampleImage } from './utils/detect.js'
 import { FEET, HOLD_ORDER, HOLD_TYPES, MOVES, estimateHoldType } from './utils/glossary.js'
-import { figureAt } from './utils/stickman.js'
+import { buildSequence } from './utils/stickman.js'
 import { LEVELS, bodyModel, findRoute, toMeters } from './utils/route.js'
 
 // 사진 없이 체험할 수 있는 데모 벽 (초록색 = 우리 루트, 나머지는 다른 루트)
@@ -343,35 +343,23 @@ export default function App() {
   }, [photo, usable, footExtras, wallWidth, model])
 
   const nSteps = plan?.route?.steps.length ?? 0
-  const frames = useMemo(() => {
-    if (!plan?.route) return []
-    const f = [{ k: 'start' }]
-    plan.route.steps.forEach((st, i) => {
-      if (st.dyno) f.push({ k: 'jump', i })
-      f.push({ k: 'land', i })
-    })
-    return f
-  }, [plan])
+  // 프레임: 출발 → (발 옮기기 → 손 옮기기)… 한 프레임에 팔다리 하나만 움직임
+  const frames = useMemo(() => (plan?.route ? buildSequence(plan.route, plan.m, model, height / 100) : []), [plan, model, height])
   const fi = Math.min(frameIdx, Math.max(0, frames.length - 1))
   const frame = frames[fi] ?? { k: 'start' }
   const idx = frame.k === 'start' ? -1 : frame.i // 현재 보고 있는 동작 번호(0부터)
   const step = idx >= 0 ? plan?.route?.steps[idx] : null
   const hardCount = plan?.route?.steps.filter((s) => s.hard).length ?? 0
   const dynoCount = plan?.route?.steps.filter((s) => s.dyno).length ?? 0
-  const fig = useMemo(
-    () => (plan?.route ? figureAt(plan.route, plan.m, model, height / 100, idx, frame.k === 'jump' ? 'jump' : 'land') : null),
-    [plan, model, height, idx, frame.k],
-  )
+  const fig = frame.fig ?? null
+  const isFoot = frame.k === 'foot'
   // 발 홀드 순서: 전체 경로를 따라가며 발이 처음 딛는 홀드에 발1, 발2 … 번호를 붙임
   const footOrder = useMemo(() => {
     if (!plan?.route) return []
     const order = []
-    for (let i = -1; i < plan.route.steps.length; i++) {
-      const f = figureAt(plan.route, plan.m, model, height / 100, i)
-      for (const id of f.feetOnHolds) if (!order.includes(id)) order.push(id)
-    }
+    for (const f of frames) for (const id of f.fig.feetOnHolds) if (!order.includes(id)) order.push(id)
     return order
-  }, [plan, model, height])
+  }, [plan, frames])
   const shownPose = useTweenPose(fig?.p ?? null)
   const [playing, setPlaying] = useState(false)
   // 재생: 처음부터 마지막 동작까지 자동으로 한 동작씩 넘김
@@ -381,7 +369,7 @@ export default function App() {
       setPlaying(false)
       return
     }
-    const id = setTimeout(() => setFrameIdx(fi + 1), frame.k === 'jump' ? 550 : 950)
+    const id = setTimeout(() => setFrameIdx(fi + 1), frame.k === 'jump' ? 550 : frame.k === 'foot' ? 700 : 950)
     return () => clearTimeout(id)
   }, [playing, fi, frames.length, frame.k])
   const togglePlay = () => {
@@ -413,7 +401,10 @@ export default function App() {
     document.getElementById(`term-${term.kind}-${term.key}`)?.scrollIntoView({ block: 'center' })
   }, [tab, term])
 
-  const moveKey = fig?.move ?? step?.move ?? null
+  const moveKey = isFoot ? null : (fig?.move ?? step?.move ?? null)
+  // 발 프레임: 옮긴 발과 그 발이 딛는 홀드
+  const movedFoot = isFoot ? fig?.feetInfo.find((f) => f.side === frame.side) : null
+  const movedFootLabel = movedFoot ? (movedFoot.id !== null && footOrder.includes(movedFoot.id) ? `발${footOrder.indexOf(movedFoot.id) + 1} 홀드` : '벽(스미어)') : ''
   const footLabel = { L: '왼발', R: '오른발' }
 
   return (
@@ -544,7 +535,7 @@ export default function App() {
                     <button className="nav" disabled={fi <= 0} onClick={() => { setPlaying(false); setFrameIdx(fi - 1) }}>◀</button>
                     <button className="nav play" onClick={togglePlay} aria-label={playing ? '멈춤' : '재생'}>{playing ? '❚❚' : '⏵'}</button>
                     <div className="stepinfo">
-                      <b>{frame.k === 'start' ? '출발 자세' : frame.k === 'jump' ? `${idx + 1} / ${nSteps} · 점프 순간` : `${idx + 1} / ${nSteps}${step?.dyno ? ' · 착지' : ''}`}</b>
+                      <b>{frame.k === 'start' ? '출발 자세' : frame.k === 'jump' ? `${idx + 1} / ${nSteps} · 점프 순간` : isFoot ? `${idx + 1} / ${nSteps} · 발 옮기기` : `${idx + 1} / ${nSteps} · 손${step?.dyno ? ' 착지' : ''}`}</b>
                       <small>힘든 동작 {hardCount}번{dynoCount ? ` · 점프 ${dynoCount}번(점선)` : ''} · 발 홀드는 하늘색</small>
                     </div>
                     <button className="nav" disabled={fi >= frames.length - 1} onClick={() => { setPlaying(false); setFrameIdx(fi + 1) }}>▶</button>
@@ -553,7 +544,7 @@ export default function App() {
                     {moveKey && MOVES[moveKey] && (
                       <button className="pill move" onClick={() => openTerm('move', moveKey)}>동작 · {MOVES[moveKey].name}</button>
                     )}
-                    {step?.holdType && HOLD_TYPES[step.holdType] && (
+                    {!isFoot && step?.holdType && HOLD_TYPES[step.holdType] && (
                       <button className="pill hold" onClick={() => openTerm('hold', step.holdType)}>홀드 · {HOLD_TYPES[step.holdType].name}</button>
                     )}
                     {fig?.feetInfo.map((f) => (
@@ -563,7 +554,15 @@ export default function App() {
                     ))}
                   </div>
                   <div className={step?.hard ? 'tips hard' : 'tips'}>
-                    {step ? (
+                    {isFoot ? (
+                      <>
+                        <h3>🦶 {frame.side === 'L' ? '왼발' : '오른발'}을 {movedFootLabel}로</h3>
+                        <ul>
+                          <li>손은 그대로 잡고 발만 옮겨요. 발을 먼저 올려 두면 다음 손 동작을 다리로 밀어 올릴 수 있어요</li>
+                          {movedFoot && FEET[movedFoot.kind] && <li>{FEET[movedFoot.kind].name}: {FEET[movedFoot.kind].tip}</li>}
+                        </ul>
+                      </>
+                    ) : step ? (
                       <>
                         <h3>{frame.k === 'jump' ? '🚀 ' : ''}{step.dyno ? '양손' : step.hand === 'L' ? '왼손' : '오른손'}을 {step.index}번 홀드로 {step.dyno ? '점프' : ''} <small>{Math.round(step.reach * 100)}cm</small></h3>
                         <ul>{step.tips.map((t) => <li key={t}>{t}</li>)}</ul>
@@ -588,7 +587,7 @@ export default function App() {
             <div className="fields">
               <NumField label="키" unit="cm" value={raw.height} onChange={(v) => setR('height', v)} />
               <NumField label="팔 벌린 길이" unit="cm" value={raw.wingspan} onChange={(v) => setR('wingspan', v)} hint="양팔을 옆으로 벌린 끝~끝" />
-              <NumField label="유연성" unit="점" value={raw.flexibility} onChange={(v) => setR('flexibility', v)} hint="기준 3 (높을수록 유연)" />
+              <NumField label="유연성" unit="점" value={raw.flexibility} onChange={(v) => setR('flexibility', v)} hint="발을 높이 올리는 정도(하이 스텝), 기준 3" />
               <NumField label="사진 속 벽 너비" unit="m" value={raw.wall} onChange={(v) => setR('wall', v)} />
             </div>
             <div className="figure">

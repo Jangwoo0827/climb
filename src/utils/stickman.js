@@ -50,26 +50,18 @@ function joint(a, b, l1, l2, side, avoid, down = 0.8) {
 const HAND_MARGIN = 0.05 // 손은 엉덩이보다 최소 이만큼(m) 위에 있어야 함
 const FOOT_CLEAR = 0.1 // 등반이 시작되면 발은 바닥에 닿지 않고 바닥에서 최소 이만큼(m) 위의 벽/홀드에 있어야 함
 
-// route: findRoute 결과, holds: 미터 단위 홀드, body: bodyModel 결과, heightM: 키(m)
-// stepIndex: 몇 번째 동작을 마친 뒤의 자세인지 (-1이면 출발 자세)
-// phase: 'jump'이면 stepIndex번째 동작(점프)의 공중 자세를 만든다
-export function figureAt(route, holds, body, heightM, stepIndex, phase = 'land') {
+// holds: 미터 단위 홀드, body: bodyModel 결과, heightM: 키(m)
+// 자세 계산기: solve(손 홀드 → 몸 위치·발), pose(그리기용 관절), jumpPose(점프 공중 자세)
+function makeSolver(holds, body, heightM) {
   const sw = 0.23 * heightM // 어깨너비
   const arm = Math.max(0.3, (body.span - sw) / 2) // 팔 전체 길이
   const torso = 0.3 * heightM
   const leg = 0.47 * heightM
+  // 하이 스텝: 발을 엉덩이 쪽으로 얼마나 높이 올릴 수 있는지(다리 길이 비율). 유연성은 여기에만 영향을 줌
+  const highStep = body.highStep ?? 0.3
 
   // 점프의 정점: 발이 벽에서 떨어지고, 몸을 쭉 펴서 목표 홀드를 향해 두 팔을 뻗는 자세
-  if (phase === 'jump') {
-    let L = route.startL
-    let R = route.startR
-    for (let i = 0; i < stepIndex; i++) {
-      const st = route.steps[i]
-      if (st.dyno) L = R = st.to
-      else if (st.hand === 'L') L = st.to
-      else R = st.to
-    }
-    const st = route.steps[stepIndex]
+  const jumpPose = (L, R, st) => {
     const from = holds[L].my <= holds[R].my ? holds[L] : holds[R] // 낮은 쪽 홀드에서 도약
     const T = holds[st.to]
     const tp = { x: T.mx, y: T.my }
@@ -159,6 +151,29 @@ export function figureAt(route, holds, body, heightM, stepIndex, phase = 'land')
 
         // 발: 편한 발 자리(삼각형 밑변)를 기준으로, 다리를 적당히 편 범위 안의 홀드를 우선 딛고 없으면 벽을 민다(스미어)
         const SNAP = 0.3
+        let f1 = null
+        let f2 = null
+        let footCost = Infinity
+        if (opts?.fixedFeet) {
+          // 발을 그대로 둔 채 몸만 옮김(손이나 다른 발만 움직이는 프레임)
+          f1 = opts.fixedFeet[0]
+          f2 = opts.fixedFeet[1]
+          const reach = (f) => {
+            const d = dist(f.p, hip)
+            if (sit) return d <= 0.95 * leg && d >= 0.3 * leg && f.p.y <= hip.y + 0.15 * leg
+            // 동작 중간 자세: 무릎을 좀 더 굽혀도 되지만 다리를 옆으로 눕히지는 않음(수직에서 약 55도까지)
+            if (opts.loose) return d <= 0.97 * leg && d >= 0.5 * leg && f.p.y <= hip.y - 0.15 * leg && Math.abs(f.p.x - hip.x) <= 1.35 * (hip.y - f.p.y) - 0.04
+            // 발을 고르는 조건과 같게: 다리를 적당히 펴고(무릎이 접히지 않게), 엉덩이 아래쪽 방향(다리를 눕히지 않게)
+            return d <= 0.97 * leg && d >= 0.55 * leg && f.p.y <= hip.y - Math.min(highStep, 0.2) * leg && Math.abs(f.p.x - hip.x) <= 1.2 * (hip.y - f.p.y) - 0.04
+          }
+          if (!reach(f1) || !reach(f2)) continue
+          // 두 발 간격: 합발이 아니면 골반 너비 이상, 다리를 찢지 않게
+          const fmatch = f1.id !== null && f1.id === f2.id
+          if (!fmatch && (dist(f1.p, f2.p) < 0.16 * heightM || Math.abs(f1.p.x - f2.p.x) > 0.58 * heightM)) continue
+          // 손 프레임은 무게중심이 두 발 사이(발을 옮기는 도중인 발 프레임은 잠깐 벗어나도 됨)
+          if (!opts.footStep && !opts.loose && !fmatch && !sit && (hx < Math.min(f1.p.x, f2.p.x) - 0.04 || hx > Math.max(f1.p.x, f2.p.x) + 0.04)) continue
+          footCost = 0
+        } else {
         const fy = sit ? Math.max(FOOT_CLEAR + 0.1, hy) : Math.max(FOOT_CLEAR, hy - 0.78 * leg)
         const off = sit ? 0.2 * heightM : Math.min(0.17 * heightM, 1.1 * (hy - fy))
         // 발 후보: 다리를 적당히 편 거리·엉덩이 아래쪽 방향 안의 홀드 전부 + 편한 자리 두 곳의 벽 밀기(스미어)
@@ -176,7 +191,7 @@ export function figureAt(route, holds, body, heightM, stepIndex, phase = 'land')
             // 싯 스타트: 무릎을 올리고 엉덩이 높이 근처의 앞쪽 홀드를 딛음
             if (d > 0.9 * leg || d < 0.3 * leg || p.y > hip.y + 0.15 * leg) return
           } else {
-            if (d > 0.97 * leg || d < (relax ? near : 0.68) * leg || p.y > hip.y - 0.3 * leg) return // 다리를 적당히 편 거리 안(무릎이 접히지 않게)
+            if (d > 0.97 * leg || d < (relax ? near : 0.68) * leg || p.y > hip.y - highStep * leg) return // 다리를 적당히 편 거리 안(무릎이 접히지 않게), 하이 스텝 높이는 유연성만큼
             if (Math.abs(p.x - hip.x) > 1.2 * (hip.y - p.y)) return // 다리를 옆으로 눕히지 않음
           }
           const dd = Math.min(dist(p, idealL), dist(p, idealR))
@@ -185,9 +200,6 @@ export function figureAt(route, holds, body, heightM, stepIndex, phase = 'land')
           cands.push({ p, c: (dd / SNAP) ** 2 * 0.5 - (h.type === 'volume' ? 0.2 : 0) - kept, id: h.id })
         })
         // 두 발을 짝으로 고름: 서로 겹치지 않고, 무게중심(엉덩이)이 두 발 사이에 오는 조합
-        let f1 = null
-        let f2 = null
-        let footCost = Infinity
         for (let i = 0; i < cands.length; i++)
           for (let j = i; j < cands.length; j++) {
             const a = cands[i]
@@ -207,6 +219,7 @@ export function figureAt(route, holds, body, heightM, stepIndex, phase = 'land')
               f2 = b
             }
           }
+        }
         if (!f1) continue
         const fx = (f1.p.x + f2.p.x) / 2
 
@@ -231,7 +244,7 @@ export function figureAt(route, holds, body, heightM, stepIndex, phase = 'land')
             // 실제 팔꿈치 위치를 계산해 위로 꺾이거나(치킨 윙) 몸통에 닿으면 감점
             const sh = { x: S.x + dx, y: S.y }
             const el = elbow(sh, h, arm / 2)
-            if (distSeg(el, S, hip) < 0.05) cost += 10 // 팔꿈치가 몸통에 닿으면 이 몸 위치는 쓰지 않음
+            if (distSeg(el, S, hip) < 0.05) reachOk = false // 팔꿈치가 몸통을 뚫는 자세는 쓰지 않음
             if (h.y < S.y) cost += ((S.y - h.y) / arm) ** 2 * 6 // 손이 어깨 아래면 몸을 낮춰 손을 어깨 높이 근처로
           }
 
@@ -259,24 +272,8 @@ export function figureAt(route, holds, body, heightM, stepIndex, phase = 'land')
     return { hl, hr, ...best }
   }
 
-  const optsFor = (i) => {
-    const st = route.steps[i]
-    return { move: st.move, movingPt: { x: holds[st.to].mx, y: holds[st.to].my } }
-  }
-
-  let L = route.startL
-  let R = route.startR
-  let s = solve(L, R, null, null)
-  for (let i = 0; i <= stepIndex; i++) {
-    const st = route.steps[i]
-    if (st.dyno) L = R = st.to
-    else if (st.hand === 'L') L = st.to
-    else R = st.to
-    s = solve(L, R, s.hip, { ...optsFor(i), prevFeet: [s.f1?.id, s.f2?.id].filter((v) => v !== null && v !== undefined) })
-  }
-  const st = stepIndex >= 0 ? route.steps[stepIndex] : null
-  const move = st?.move ?? null
-
+  // 풀린 자세 s를 그리기용 관절 좌표로 바꿈. move/st: 이 프레임의 손 동작(발 프레임이면 null)
+  const pose = (s, L, R, move, st) => {
   const { hl, hr, hip, S } = s
   const shL = add(S, { x: -sw / 2, y: 0 })
   const shR = add(S, { x: sw / 2, y: 0 })
@@ -284,28 +281,16 @@ export function figureAt(route, holds, body, heightM, stepIndex, phase = 'land')
   const hipR = add(hip, { x: 0.05 * heightM, y: 0 })
   const feet = [{ ...s.f1 }, { ...s.f2 }]
   // 발 매칭이면 같은 홀드 양쪽에 발을 나란히 올림
-  if (s.f1 === s.f2) {
+  if (s.f1.id !== null && s.f1.id === s.f2.id) {
     feet[0].p = { x: s.f1.p.x - 0.04, y: s.f1.p.y }
     feet[1].p = { x: s.f1.p.x + 0.04, y: s.f1.p.y }
   }
 
-  // 플래깅: 한 발만 홀드에 딛고, 다른 다리는 이동 반대쪽으로 쭉 뻗어 균형을 잡음
   const dir = st ? Math.sign(st.dx || 1) : 0
-  if (move === 'flag') {
-    const support = feet.find((f) => f.id !== null) ?? feet[0]
-    const other = feet.find((f) => f !== support)
-    other.p = { x: hip.x - dir * 0.55 * leg, y: Math.max(FOOT_CLEAR, hip.y - 0.72 * leg) } // 뻗은 다리는 거의 곧게
-    other.id = null
-    other.flag = true
-    // 뻗은 다리가 딛는 발과 겹치지 않게
-    if (dist(other.p, support.p) < 0.16 * heightM) other.p = { x: support.p.x - dir * 0.2 * heightM, y: Math.max(FOOT_CLEAR, support.p.y + 0.05) }
-  }
-
   feet.sort((a, b) => a.p.x - b.p.x)
   const [footL, footR] = feet
   const kindOf = (f) => {
-    if (f.flag) return 'flag'
-    if (s.f1 === s.f2 && f.id !== null) return 'footmatch'
+    if (s.f1.id !== null && s.f1.id === s.f2.id) return 'footmatch'
     if (f.id !== null && holds[f.id].type === 'volume') return 'volume'
     if (f.id !== null) return f.p.y > hip.y - 0.3 * leg ? 'heelhook' : 'edging'
     return 'smear'
@@ -343,4 +328,96 @@ export function figureAt(route, holds, body, heightM, stepIndex, phase = 'land')
       neck: { x: S.x, y: S.y },
     },
   }
+}
+  return { solve, pose, jumpPose }
+}
+
+const feetOfState = (s) => [s.f1, s.f2].slice().sort((a, b) => a.p.x - b.p.x) // [왼발, 오른발]
+const sameFoot = (a, b) => (a.id !== null ? a.id === b.id : b.id === null && dist(a.p, b.p) < 0.06)
+
+// 경로 전체를 프레임으로 만듦. 한 프레임에는 팔다리 하나만 움직임(손 따로, 발 따로).
+// 손을 옮기기 전에 발을 먼저 한 발씩 올리고(발 먼저), 그 상태로 손이 안 닿으면 손을 먼저 옮기고 발을 따라 올림.
+// 반환: [{ k: 'start' | 'foot' | 'hand' | 'jump', i: 손 동작 번호(출발은 -1), side: 'L'|'R'(발 프레임), fig }]
+export function buildSequence(route, holds, body, heightM) {
+  const { solve, pose, jumpPose } = makeSolver(holds, body, heightM)
+  const ids = (s) => [s.f1?.id, s.f2?.id].filter((v) => v !== null && v !== undefined)
+  const fixed = (L, R, feet, prevHip, opts) => {
+    const r = solve(L, R, prevHip, { ...opts, fixedFeet: feet })
+    return r?.hip && r.reachOk ? r : null
+  }
+  const frames = []
+  let L = route.startL
+  let R = route.startR
+  let s = solve(L, R, null, null)
+  frames.push({ k: 'start', i: -1, fig: pose(s, L, R, null, null) })
+
+  route.steps.forEach((st, i) => {
+    const opts = { move: st.move, movingPt: { x: holds[st.to].mx, y: holds[st.to].my } }
+    const nL = st.dyno || st.hand === 'L' ? st.to : L
+    const nR = st.dyno || st.hand === 'R' ? st.to : R
+    if (st.dyno) {
+      // 점프: 두 발이 함께 떨어졌다가 착지하며 새 발 자리를 딛음
+      frames.push({ k: 'jump', i, fig: jumpPose(L, R, st) })
+      s = solve(nL, nR, s.hip, { ...opts, prevFeet: ids(s) })
+      frames.push({ k: 'hand', i, fig: pose(s, nL, nR, st.move, st) })
+      L = nL
+      R = nR
+      return
+    }
+    const target = solve(nL, nR, s.hip, { ...opts, prevFeet: ids(s) })
+    const cur = feetOfState(s)
+    const tgt = feetOfState(target)
+    // 바뀌는 발: 더 많이 올라가야 하는 발부터 옮김
+    const changed = [0, 1]
+      .filter((k) => !sameFoot(cur[k], tgt[k]))
+      .sort((a, b) => tgt[b].p.y - cur[b].p.y - (tgt[a].p.y - cur[a].p.y))
+
+    // 손, 왼발, 오른발 중 바뀌는 것들을 한 번에 하나씩 옮기는 모든 순서를 시도함(발을 먼저 옮기는 순서를 우선)
+    const limbs = ['hand', ...changed]
+    const orders = []
+    const permute = (rest, acc) => {
+      if (!rest.length) return orders.push(acc)
+      rest.forEach((x, n) => permute([...rest.slice(0, n), ...rest.slice(n + 1)], [...acc, x]))
+    }
+    permute(limbs, [])
+    orders.sort((a, b) => a.indexOf('hand') - b.indexOf('hand')) // 손을 늦게 옮길수록(발 먼저) 앞에
+    orders.reverse()
+    let plan = null
+    // 엄격한 조건으로 먼저 찾고, 없으면 중간 자세만 조건을 완화해서 다시 찾음(사람도 동작 중간엔 잠깐 불편한 자세를 지남)
+    for (const loose of [false, true]) for (const order of orders) {
+      if (plan) break
+      let hands = [L, R]
+      let feet = [...cur]
+      let hip = s.hip
+      const out = []
+      let ok = true
+      for (const limb of order) {
+        if (limb === 'hand') hands = [nL, nR]
+        else {
+          feet = [...feet]
+          feet[limb] = tgt[limb]
+        }
+        const isHand = limb === 'hand'
+        const last = limb === order[order.length - 1] // 마지막(도착) 자세는 항상 엄격한 조건
+        const r = fixed(hands[0], hands[1], feet, hip, { ...(isHand ? opts : { move: null, footStep: true }), loose: loose && !last })
+        if (!r) {
+          ok = false
+          break
+        }
+        out.push(isHand ? { k: 'hand', s: r, hands } : { k: 'foot', side: limb === 0 ? 'L' : 'R', s: r, hands })
+        hip = r.hip
+      }
+      if (ok) plan = out
+    }
+    if (!plan) plan = [{ k: 'hand', s: target, hands: [nL, nR], together: true }]
+
+    for (const f of plan) {
+      const isHand = f.k === 'hand'
+      frames.push({ k: f.k, i, side: f.side, together: f.together, fig: pose(f.s, f.hands[0], f.hands[1], isHand ? st.move : null, isHand ? st : null) })
+    }
+    s = plan[plan.length - 1].s
+    L = nL
+    R = nR
+  })
+  return frames
 }

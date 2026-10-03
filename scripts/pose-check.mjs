@@ -1,6 +1,6 @@
 // 졸라맨 자세가 사람 몸으로 가능한지 검사한다. 실행: node scripts/pose-check.mjs
 import { bodyModel, findRoute, toMeters } from '../src/utils/route.js'
-import { figureAt } from '../src/utils/stickman.js'
+import { buildSequence } from '../src/utils/stickman.js'
 import { estimateHoldType } from '../src/utils/glossary.js'
 
 const segDist = (p, a, b) => {
@@ -19,6 +19,9 @@ const scenes = {
   wideStart: { aspect: 0.8, px: [[0.25, 0.62], [0.62, 0.6], [0.45, 0.78], [0.5, 0.45], [0.35, 0.33], [0.55, 0.2], [0.42, 0.08]], start: [0, 1], fin: [6] },
 }
 let total = 0
+let multiLimb = 0
+let handFrames = 0
+let footFrames = 0
 let smearBoth = 0
 let oneFoot = 0
 let steps = 0
@@ -41,17 +44,25 @@ for (const [name, sc] of Object.entries(scenes).filter(([n]) => !process.env.SCE
         const arm = (body.span - 0.23 * H) / 2
         steps += r.steps.length
         longMoves += r.steps.filter((st) => !st.dyno && st.reach > body.comfort * 1.15).length
-        for (let i = -1; i < r.steps.length; i++)
-          for (const phase of i >= 0 && r.steps[i].dyno ? ['land', 'jump'] : ['land']) {
+        const frames = buildSequence(r, holds, body, H)
+        frames.forEach((fr, fidx) => {
+          {
+            const i = fr.i
+            const phase = fr.k === 'jump' ? 'jump' : 'land'
             total++
-            const fig = figureAt(r, holds, body, H, i, phase)
+            const fig = fr.fig
             const { p } = fig
+            // 손 따로 발 따로: 손과 발을 한 프레임에 함께 옮긴 경우(어떤 순서로도 나눌 수 없을 때만 생김)
+            if (fr.together) multiLimb++
+            if (fr.k === 'hand') handFrames++
+            if (fr.k === 'foot') footFrames++
             const issues = []
             for (const [sh, h] of [[p.shL, p.hl], [p.shR, p.hr]]) if (Math.hypot(sh.x - h.x, sh.y - h.y) > arm * 1.001) issues.push('팔 늘어남')
             for (const k of ['footL', 'footR']) if (p[k].y < 0.0999) issues.push(k + ' 바닥에 닿음')
+            const sitStartEarly = Math.min(p.hl.y, p.hr.y) < 0.1 + 0.65 * 0.47 * H + 0.05
             if (phase === 'land') {
               for (const h of [p.hl, p.hr]) if (h.y < p.hip.y - 1e-6 && h.y > 0.12) issues.push('손이 허리 아래')
-              for (const [k, f] of [['footL', p.footL], ['footR', p.footR]]) if (Math.abs(f.x - p.hip.x) > 1.2 * (p.hip.y - f.y) + 0.05 && fig.feetInfo.some((x) => x.id !== null)) issues.push(k + ' 옆으로 눕힘')
+              for (const [k, f] of [['footL', p.footL], ['footR', p.footR]]) if (!sitStartEarly && Math.abs(f.x - p.hip.x) > (fr.k === 'foot' ? 1.35 : 1.2) * (p.hip.y - f.y) + 0.05 && fig.feetInfo.some((x) => x.id !== null)) issues.push(k + ' 옆으로 눕힘')
               // 팔꿈치가 어깨-손 선보다 위로 꺾이면 치킨 윙
               for (const [k, sh, h] of [['elL', p.shL, p.hl], ['elR', p.shR, p.hr]]) { const t = (p[k].x - sh.x) / ((h.x - sh.x) || 1e-6); const lineY = Math.abs(h.x - sh.x) > 0.02 ? sh.y + (h.y - sh.y) * t : -Infinity; if (p[k].y > lineY + 0.02 && Math.abs(h.x - sh.x) > 0.02) issues.push(k + ' 선 위로 꺾임') }
               const fm = fig.feetInfo.every((f) => f.kind === 'footmatch')
@@ -78,14 +89,15 @@ for (const [name, sc] of Object.entries(scenes).filter(([n]) => !process.env.SCE
               const lo = Math.min(p.footL.x, p.footR.x) - 0.05
               const hi = Math.max(p.footL.x, p.footR.x) + 0.05
               const flag = fig.move === 'flag'
-              if (!flag && !fm && !sitStart && (p.hip.x < lo || p.hip.x > hi)) issues.push('무게중심이 두 발 밖')
+              if (fr.k !== 'foot' && !flag && !fm && !sitStart && (p.hip.x < lo || p.hip.x > hi)) issues.push('무게중심이 두 발 밖')
             }
             if (issues.length) {
               bad++
-              if (bad <= 8) console.log(name, W, height, level, 'step', i, phase, issues.join(', '))
+              if (bad <= 8) console.log(name, W, height, level, 'step', i, fr.k, issues.join(', '))
             }
           }
+        })
       }
 if (process.env.SCENE) console.log('scene', process.env.SCENE)
-console.log('자세', total, '문제', bad, '· 발이 홀드에 0개', smearBoth, '· 1개', oneFoot, '· 손 이동', steps, '중 크게 뻗는 이동', longMoves, '· 팔 굽혀 매달림', bentArms, '· 합발', footMatch, '· 엉덩이 높음', hipHigh, '· 두 손 높이차 60cm↑', handGap, '· 다른 홀드 두 개', twoHolds)
+console.log('자세', total, '문제', bad, '· 발이 홀드에 0개', smearBoth, '· 1개', oneFoot, '· 손 이동', steps, '중 크게 뻗는 이동', longMoves, '· 팔 굽혀 매달림', bentArms, '· 합발', footMatch, '· 엉덩이 높음', hipHigh, '· 두 손 높이차 60cm↑', handGap, '· 다른 홀드 두 개', twoHolds, '· 발 옮기기 프레임', footFrames, '· 손과 발을 함께 옮김', multiLimb, '/ 손 동작', handFrames)
 process.exitCode = bad ? 1 : 0

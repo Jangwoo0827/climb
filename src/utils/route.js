@@ -14,11 +14,9 @@ export const LEVELS = {
 export function bodyModel({ height, apeIndex, flexibility, level }) {
   const L = LEVELS[level]
   const span = (height / 100) * apeIndex
-  // 입력값은 제한이 없어도 계산이 무너지지 않도록 보정값만 0.5~2배로 제한
-  const flexBonus = Math.min(2, Math.max(0.5, 1 + (flexibility - 3) * 0.035))
   const physical = span // 두 손 사이 물리적 최대 = 양팔 + 어깨너비 = 팔 벌린 길이
-  // 한 손을 옮길 때 다른 손과의 최대 거리. 유연성이 높아도 몸의 한계(92%)를 넘지 않음
-  const maxReach = Math.min(span * L.reachRatio * flexBonus, physical * 0.92)
+  // 한 손을 옮길 때 다른 손과의 최대 거리: 팔 길이(팔 벌린 길이)로만 정해짐(유연성과 무관), 몸의 한계 92%를 넘지 않음
+  const maxReach = Math.min(span * L.reachRatio, physical * 0.92)
   const Hm = height / 100
   const arm = Math.max(0.3, (span - 0.23 * Hm) / 2)
   return {
@@ -26,7 +24,9 @@ export function bodyModel({ height, apeIndex, flexibility, level }) {
     maxReach,
     // 손이 허리(엉덩이)보다 아래로 내려가지 않게 하려면 두 손의 높이 차가 이보다 작아야 함: 팔 길이 + 몸통 - 여유
     maxVertical: arm * 0.97 + 0.3 * Hm - 0.05,
-    comfort: span * L.comfort * flexBonus, // 이 이하면 편안한 움직임
+    comfort: span * L.comfort, // 이 이하면 편안한 움직임
+    // 하이 스텝: 발을 엉덩이에서 다리 길이의 이 비율만큼 아래까지 올릴 수 있음(작을수록 높이 올림). 유연성 3 기준 0.3, 1점마다 0.06
+    highStep: Math.min(0.45, Math.max(0.1, 0.3 - ((Number.isFinite(flexibility) ? flexibility : 3) - 3) * 0.06)),
     jumpReach: maxReach + span * L.jump, // 점프하면 닿는 최대 거리
     level: L,
   }
