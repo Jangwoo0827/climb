@@ -121,7 +121,7 @@ export function figureAt(route, holds, body, heightM, stepIndex, phase = 'land')
 
   // 한 단계의 자세를 푼다. prev: 직전 단계의 엉덩이 위치(자세가 갑자기 튀지 않게 함), opts: {move, movingPt}
   const solve = (L, R, prev, opts, relax = 0) => {
-    const near = relax ? 0.3 : 0.5 // 발이 엉덩이에 이보다 가까우면(다리 길이 비율) 무릎이 접혀 부자연스러움
+    const near = relax ? 0.35 : 0.6 // 발이 엉덩이에 이보다 가까우면(다리 길이 비율) 무릎이 접혀 부자연스러움
     // 팔이 몸을 가로지르지 않도록 손은 x 순서대로 왼손/오른손으로 배정
     const pts = [holds[L], holds[R]].map((h) => ({ x: h.mx, y: h.my })).sort((a, b) => a.x - b.x)
     const [hl, hr] = pts
@@ -151,7 +151,7 @@ export function figureAt(route, holds, body, heightM, stepIndex, phase = 'land')
         for (const s of [-1, 1]) {
           // 낮은 자리에서는 바닥에서 띄운 높이(FOOT_CLEAR)의 벽면에 발을 붙임
           const p = { x: hx + s * 0.17 * heightM, y: Math.max(FOOT_CLEAR, hy - 0.78 * leg) }
-          if (dist(p, hip) <= 0.98 * leg && dist(p, hip) >= near * leg) feet.push({ p, c: 0.5, id: null })
+          if (dist(p, hip) <= 0.98 * leg && dist(p, hip) >= near * leg) feet.push({ p, c: 2.5, id: null }) // 벽면 스미어는 홀드가 없을 때만: 크게 불리
         }
         // 삼각형 기본자세: 두 발을 넓게 벌려 밑변을 만들고 엉덩이(무게중심)가 그 밑변 위에 오게 하는 발 조합을 고름
         feet.sort((a, b) => a.c - b.c)
@@ -166,7 +166,8 @@ export function figureAt(route, holds, body, heightM, stepIndex, phase = 'land')
             const spread = Math.abs(a.p.x - b.p.x)
             if (dist(a.p, b.p) < 0.16 * heightM) continue // 두 발이 한 점에 모이지 않게
             let c = a.c + b.c
-            c += ((spread - 0.35 * heightM) / heightM) ** 2 * 12 // 밑변 너비: 키의 35% 정도
+            c += ((spread - 0.35 * heightM) / heightM) ** 2 * 30 // 밑변 너비: 키의 35% 정도
+            if (spread > 0.6 * heightM) c += 4 // 다리를 일자로 찢는 자세는 거의 불가능
             const lo = Math.min(a.p.x, b.p.x)
             const hi = Math.max(a.p.x, b.p.x)
             if (hx < lo || hx > hi) c += 3 + (Math.min(Math.abs(hx - lo), Math.abs(hx - hi)) / torso) * 6 // 무게중심이 밑변 밖이면 크게 감점
@@ -180,7 +181,7 @@ export function figureAt(route, holds, body, heightM, stepIndex, phase = 'land')
         const fx = (f1.p.x + f2.p.x) / 2
 
         // 상체 기울기: 손 쪽으로 몸을 기울일 수 있음
-        for (const lean of [-0.15, -0.075, 0, 0.075, 0.15]) {
+        for (const lean of [-0.1, -0.05, 0, 0.05, 0.1]) { // 상체는 크게 기울이지 않음
           const S = { x: hx + lean, y: hy + torso }
           let cost = footCost
 
@@ -195,6 +196,11 @@ export function figureAt(route, holds, body, heightM, stepIndex, phase = 'land')
             if (d > 0.97 * arm) cost += 40 * ((d - 0.97 * arm) / arm + 0.05)
             else cost += ((d - target * arm) / arm) ** 2 * 3
             if (wrong(h)) cost += 4 // 손이 가슴 앞이나 반대편이면 팔이 몸에 걸림
+            // 실제 팔꿈치 위치를 계산해 위로 꺾이거나(치킨 윙) 몸통에 닿으면 감점
+            const sh = { x: S.x + dx, y: S.y }
+            const el = joint(sh, h, arm / 2, arm / 2, dx < 0 ? -1 : 1, [S, hip])
+            if (el.y > Math.max(sh.y, h.y) + 0.02) cost += 3
+            if (distSeg(el, S, hip) < 0.04) cost += 3
             if (h.y < S.y) cost += ((S.y - h.y) / arm) ** 2 * 6 // 손이 어깨 아래면 몸을 낮춰 손을 어깨 높이 근처로
           }
 

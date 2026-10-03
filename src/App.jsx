@@ -100,6 +100,54 @@ function BodyFigure({ height, wingspan }) {
   )
 }
 
+// 졸라맨 관절을 이전 자세에서 새 자세로 부드럽게 옮겨 그림(올라가는 애니메이션)
+function useTweenPose(target, ms = 450) {
+  const [shown, setShown] = useState(target)
+  const fromRef = useRef(target)
+  const shownRef = useRef(target)
+  useEffect(() => {
+    if (!target) {
+      shownRef.current = null
+      setShown(null)
+      return
+    }
+    const from = shownRef.current
+    if (!from) {
+      shownRef.current = target
+      setShown(target)
+      return
+    }
+    fromRef.current = from
+    let raf
+    const t0 = performance.now()
+    const tick = (now) => {
+      const t = Math.min(1, (now - t0) / ms)
+      const e = t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2 // 천천히 시작해서 천천히 멈춤
+      const p = {}
+      for (const key of Object.keys(target)) {
+        const a = fromRef.current[key] ?? target[key]
+        const b = target[key]
+        p[key] = { x: a.x + (b.x - a.x) * e, y: a.y + (b.y - a.y) * e }
+      }
+      shownRef.current = p
+      setShown(p)
+      if (t < 1) raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    // 화면이 가려져 애니메이션 프레임이 멈춰도 최종 자세로는 넘어가게 함
+    const done = setTimeout(() => {
+      cancelAnimationFrame(raf)
+      shownRef.current = target
+      setShown(target)
+    }, ms + 80)
+    return () => {
+      cancelAnimationFrame(raf)
+      clearTimeout(done)
+    }
+  }, [target, ms])
+  return shown
+}
+
 const defaultBody = { height: '165', wingspan: '165', flexibility: '3', wall: '3.5' }
 const pos = (s, d) => {
   const v = parseFloat(s)
@@ -303,6 +351,26 @@ export default function App() {
     () => (plan?.route ? figureAt(plan.route, plan.m, model, height / 100, idx, frame.k === 'jump' ? 'jump' : 'land') : null),
     [plan, model, height, idx, frame.k],
   )
+  const shownPose = useTweenPose(fig?.p ?? null)
+  const [playing, setPlaying] = useState(false)
+  // 재생: 처음부터 마지막 동작까지 자동으로 한 동작씩 넘김
+  useEffect(() => {
+    if (!playing) return
+    if (fi >= frames.length - 1) {
+      setPlaying(false)
+      return
+    }
+    const id = setTimeout(() => setFrameIdx(fi + 1), frame.k === 'jump' ? 550 : 950)
+    return () => clearTimeout(id)
+  }, [playing, fi, frames.length, frame.k])
+  const togglePlay = () => {
+    if (playing) setPlaying(false)
+    else {
+      if (fi >= frames.length - 1) setFrameIdx(0)
+      setPlaying(true)
+    }
+  }
+
   // 미터 -> SVG 좌표 (viewBox 높이 1 = 벽 높이)
   const k = photo ? photo.aspect / wallWidth : 1
   const sv = (p) => `${p.x * k},${1 - p.y * k}`
@@ -368,7 +436,7 @@ export default function App() {
                         />
                       )
                     })}
-                  {fig && <Stickman p={fig.p} sv={sv} headR={0.06 * (height / 100) * k} hard={step?.hard} label={fig.airborne ? '점프!' : null} />}
+                  {fig && shownPose && <Stickman p={shownPose} sv={sv} headR={0.06 * (height / 100) * k} hard={step?.hard} label={fig.airborne ? '점프!' : null} />}
                   {typedHolds.map((h, i) =>
                     h.type === 'volume' && h.extent ? (
                       <circle key={i} cx={h.x * photo.aspect} cy={h.y} r={Math.sqrt((h.size * photo.aspect) / Math.PI) * 0.85} fill="none" stroke="#b0e0ff" strokeWidth="0.006" strokeDasharray="0.02 0.014" />
@@ -436,12 +504,13 @@ export default function App() {
               ) : (
                 <>
                   <div className="stepper">
-                    <button className="nav" disabled={fi <= 0} onClick={() => setFrameIdx(fi - 1)}>◀</button>
+                    <button className="nav" disabled={fi <= 0} onClick={() => { setPlaying(false); setFrameIdx(fi - 1) }}>◀</button>
+                    <button className="nav play" onClick={togglePlay} aria-label={playing ? '멈춤' : '재생'}>{playing ? '❚❚' : '⏵'}</button>
                     <div className="stepinfo">
                       <b>{frame.k === 'start' ? '출발 자세' : frame.k === 'jump' ? `${idx + 1} / ${nSteps} · 점프 순간` : `${idx + 1} / ${nSteps}${step?.dyno ? ' · 착지' : ''}`}</b>
                       <small>힘든 동작 {hardCount}번{dynoCount ? ` · 점프 ${dynoCount}번(점선)` : ''} · 발 홀드는 하늘색</small>
                     </div>
-                    <button className="nav" disabled={fi >= frames.length - 1} onClick={() => setFrameIdx(fi + 1)}>▶</button>
+                    <button className="nav" disabled={fi >= frames.length - 1} onClick={() => { setPlaying(false); setFrameIdx(fi + 1) }}>▶</button>
                   </div>
                   <div className="pills">
                     {moveKey && MOVES[moveKey] && (

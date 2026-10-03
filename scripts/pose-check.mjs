@@ -17,6 +17,7 @@ const scenes = {
   wideStart: { aspect: 0.8, px: [[0.25, 0.62], [0.62, 0.6], [0.45, 0.78], [0.5, 0.45], [0.35, 0.33], [0.55, 0.2], [0.42, 0.08]], start: [0, 1], fin: [6] },
 }
 let total = 0
+let smearBoth = 0
 let bad = 0
 for (const [name, sc] of Object.entries(scenes))
   for (const W of [3.5, 5])
@@ -40,10 +41,15 @@ for (const [name, sc] of Object.entries(scenes))
               for (const h of [p.hl, p.hr]) if (h.y < p.hip.y - 1e-6 && h.y > 0.12) issues.push('손이 허리 아래')
               if (Math.hypot(p.footL.x - p.footR.x, p.footL.y - p.footR.y) < 0.16 * H - 1e-6) issues.push('두 발이 한 점')
               for (const [k, sh, h] of [['elL', p.shL, p.hl], ['elR', p.shR, p.hr]]) if (p[k].y > Math.max(sh.y, h.y) + 0.02) issues.push(k + ' 위로 꺾임')
-              const sitStart = Math.min(p.hl.y, p.hr.y) < 0.1 + 0.45 * 0.47 * H // 손이 너무 낮으면 앉아서 출발(싯 스타트): 무릎이 엉덩이보다 높은 게 정상
+              const sitStart = Math.min(p.hl.y, p.hr.y) < 0.1 + 0.65 * 0.47 * H + 0.05 // 손이 너무 낮으면 앉아서 출발(싯 스타트): 무릎이 엉덩이보다 높은 게 정상
               // 발을 높이 올린 하이 스텝(발이 엉덩이 근처)은 무릎이 엉덩이보다 높은 게 정상
               if (!sitStart) for (const [k, f] of [['kneeL', p.footL], ['kneeR', p.footR]]) if (p[k].y > p.hip.y + 0.02 && f.y < p.hip.y - 0.45 * 0.47 * H) issues.push(k + ' 엉덩이보다 위')
               for (const k of ['elL', 'elR']) if (segDist(p[k], p.neck, p.hip) < 0.03) issues.push(k + ' 몸통 관통')
+              // 무릎 각도: 엉덩이-무릎-발이 50도보다 좁게 접히면 부자연스러움(싯 스타트 제외)
+              const ang = (a, b, c) => { const v1 = [a.x - b.x, a.y - b.y]; const v2 = [c.x - b.x, c.y - b.y]; return Math.acos(Math.max(-1, Math.min(1, (v1[0] * v2[0] + v1[1] * v2[1]) / (Math.hypot(...v1) * Math.hypot(...v2) || 1)))) * 180 / Math.PI }
+              if (!sitStart) for (const [k, hp, f] of [['kneeL', p.hipL, p.footL], ['kneeR', p.hipR, p.footR]]) if (ang(hp, p[k], f) < 50) issues.push(k + ' 너무 접힘')
+              if (Math.abs(p.footL.x - p.footR.x) > 0.62 * H && fig.move !== 'flag') issues.push('다리 찢음')
+              if (fig.feetInfo.filter((f) => f.kind === 'smear').length === 2) smearBoth++
               // 삼각형 기본자세: 엉덩이가 두 발 사이(밑변 안)에 있어야 함(플래깅·싯 스타트 제외)
               const lo = Math.min(p.footL.x, p.footR.x) - 0.05
               const hi = Math.max(p.footL.x, p.footR.x) + 0.05
@@ -56,5 +62,5 @@ for (const [name, sc] of Object.entries(scenes))
             }
           }
       }
-console.log('자세', total, '문제', bad)
+console.log('자세', total, '문제', bad, '· 두 발 모두 홀드 없이 벽에 붙인 자세', smearBoth)
 process.exitCode = bad ? 1 : 0

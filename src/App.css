@@ -105,3 +105,4 @@ main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .modes button.on.finish { background: #ff4d8d; color: #fff; }
 
 .ver { font-size: 10px; font-weight: 400; color: #6f778a; margin-left: 4px; }
+.nav.play { width: 48px; background: #3b3358; color: #d9c6ff; }
