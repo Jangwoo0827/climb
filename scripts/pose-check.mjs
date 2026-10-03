@@ -31,7 +31,8 @@ for (const [name, sc] of Object.entries(scenes))
         for (let i = -1; i < r.steps.length; i++)
           for (const phase of i >= 0 && r.steps[i].dyno ? ['land', 'jump'] : ['land']) {
             total++
-            const { p } = figureAt(r, holds, body, H, i, phase)
+            const fig = figureAt(r, holds, body, H, i, phase)
+            const { p } = fig
             const issues = []
             for (const [sh, h] of [[p.shL, p.hl], [p.shR, p.hr]]) if (Math.hypot(sh.x - h.x, sh.y - h.y) > arm * 1.001) issues.push('팔 늘어남')
             for (const k of ['footL', 'footR']) if (p[k].y < 0.0999) issues.push(k + ' 바닥에 닿음')
@@ -43,6 +44,11 @@ for (const [name, sc] of Object.entries(scenes))
               // 발을 높이 올린 하이 스텝(발이 엉덩이 근처)은 무릎이 엉덩이보다 높은 게 정상
               if (!sitStart) for (const [k, f] of [['kneeL', p.footL], ['kneeR', p.footR]]) if (p[k].y > p.hip.y + 0.02 && f.y < p.hip.y - 0.45 * 0.47 * H) issues.push(k + ' 엉덩이보다 위')
               for (const k of ['elL', 'elR']) if (segDist(p[k], p.neck, p.hip) < 0.03) issues.push(k + ' 몸통 관통')
+              // 삼각형 기본자세: 엉덩이가 두 발 사이(밑변 안)에 있어야 함(플래깅·싯 스타트 제외)
+              const lo = Math.min(p.footL.x, p.footR.x) - 0.05
+              const hi = Math.max(p.footL.x, p.footR.x) + 0.05
+              const flag = fig.move === 'flag'
+              if (!flag && !sitStart && (p.hip.x < lo || p.hip.x > hi)) issues.push('무게중심이 두 발 밖')
             }
             if (issues.length) {
               bad++

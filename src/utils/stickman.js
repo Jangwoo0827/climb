@@ -116,7 +116,7 @@ export function figureAt(route, holds, body, heightM, stepIndex, phase = 'land')
     if (move === 'lockoff') return isMoving ? 0.95 : 0.55 // 한 팔은 굽혀 고정, 다른 팔은 쭉 뻗음
     if (move === 'deadpoint') return isMoving ? 0.97 : 0.8 // 몸을 길게 펴고 정점에서 잡음
     if (move === 'mantle') return isMoving ? 0.5 : 0.85 // 볼륨을 눌러 몸을 밀어 올림: 움직이는 팔은 굽힘
-    return 0.85
+    return 0.92 // 기본: 팔을 거의 곧게 펴서 뼈로 매달림
   }
 
   // 한 단계의 자세를 푼다. prev: 직전 단계의 엉덩이 위치(자세가 갑자기 튀지 않게 함), opts: {move, movingPt}
@@ -146,18 +146,37 @@ export function figureAt(route, holds, body, heightM, stepIndex, phase = 'land')
           if (p.y < FOOT_CLEAR) return // 바닥에 닿는 낮은 홀드는 제외
           if (d > 0.95 * leg || d < near * leg || p.y > hip.y - 0.3 * leg) return // 너무 멀거나, 너무 가깝거나(무릎이 접힘), 엉덩이 근처보다 높은 홀드
           // 볼륨은 발판이 넓어 안정적이라 조금 유리하게 침
-          feet.push({ p, c: ((d - 0.72 * leg) / leg) ** 2 * 4 + (p.y > hip.y - 0.25 * leg ? 0.3 : 0) - (h.type === 'volume' ? 0.25 : 0), id: h.id })
+          feet.push({ p, c: ((d - 0.82 * leg) / leg) ** 2 * 4 + (p.y > hip.y - 0.25 * leg ? 0.3 : 0) - (h.type === 'volume' ? 0.25 : 0), id: h.id })
         })
         for (const s of [-1, 1]) {
           // 낮은 자리에서는 바닥에서 띄운 높이(FOOT_CLEAR)의 벽면에 발을 붙임
-          const p = { x: hx + s * 0.12 * heightM, y: Math.max(FOOT_CLEAR, hy - 0.7 * leg) }
+          const p = { x: hx + s * 0.17 * heightM, y: Math.max(FOOT_CLEAR, hy - 0.78 * leg) }
           if (dist(p, hip) <= 0.98 * leg && dist(p, hip) >= near * leg) feet.push({ p, c: 0.5, id: null })
         }
+        // 삼각형 기본자세: 두 발을 넓게 벌려 밑변을 만들고 엉덩이(무게중심)가 그 밑변 위에 오게 하는 발 조합을 고름
         feet.sort((a, b) => a.c - b.c)
-        const f1 = feet[0]
-        const f2 = feet.find((f) => f !== f1 && dist(f.p, f1.p) > 0.16 * heightM) // 두 발은 한 점에 모이지 않고 골반 너비 이상 벌림
-        if (!f1 || !f2) continue
-        const footCost = f1.c + f2.c
+        const cand = feet.slice(0, 10)
+        let f1 = null
+        let f2 = null
+        let footCost = Infinity
+        for (let i = 0; i < cand.length; i++)
+          for (let j = i + 1; j < cand.length; j++) {
+            const a = cand[i]
+            const b = cand[j]
+            const spread = Math.abs(a.p.x - b.p.x)
+            if (dist(a.p, b.p) < 0.16 * heightM) continue // 두 발이 한 점에 모이지 않게
+            let c = a.c + b.c
+            c += ((spread - 0.35 * heightM) / heightM) ** 2 * 12 // 밑변 너비: 키의 35% 정도
+            const lo = Math.min(a.p.x, b.p.x)
+            const hi = Math.max(a.p.x, b.p.x)
+            if (hx < lo || hx > hi) c += 3 + (Math.min(Math.abs(hx - lo), Math.abs(hx - hi)) / torso) * 6 // 무게중심이 밑변 밖이면 크게 감점
+            if (c < footCost) {
+              footCost = c
+              f1 = a
+              f2 = b
+            }
+          }
+        if (!f1) continue
         const fx = (f1.p.x + f2.p.x) / 2
 
         // 상체 기울기: 손 쪽으로 몸을 기울일 수 있음
@@ -180,6 +199,8 @@ export function figureAt(route, holds, body, heightM, stepIndex, phase = 'land')
           }
 
           cost += ((hx - fx) / torso) ** 2 * 1.2 // 체중이 발 위에 실리도록
+          const footY = Math.min(f1.p.y, f2.p.y)
+          cost += Math.max(0, 0.7 * leg - (hy - footY)) / leg * 4 // 엉덩이가 발에 너무 내려앉으면(웅크림) 감점: 다리를 펴서 섬
           cost += ((hx - mid.x) / torso) ** 2 * 0.3
           cost += (lean / torso) ** 2 * 0.5
           if (prev) cost += 1.5 * dist(hip, prev) ** 2
