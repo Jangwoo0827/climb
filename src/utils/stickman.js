@@ -209,7 +209,9 @@ function makeSolver(holds, body, heightM) {
             if (!footMatch && dist(a.p, b.p) < 0.16 * heightM) continue
             const lo = Math.min(a.p.x, b.p.x)
             const hi = Math.max(a.p.x, b.p.x)
-            let c = a.c + b.c + (footMatch ? 8 : 0) // 합발은 다른 홀드 두 개를 딛을 수 없을 때만
+            // 한 발만 홀드: 다른 발은 편한 자리에서 벽을 밀면 합발보다 자연스러울 때가 있어 비용을 합발과 비슷하게(7)
+            const oneFoot = !footMatch && (a.id === null) !== (b.id === null)
+            let c = (oneFoot ? (a.id === null ? 7 + b.c : a.c + 7) : a.c + b.c) + (footMatch ? 8 : 0) // 합발은 다른 홀드 두 개를 딛을 수 없을 때만
             if (!footMatch && (hx < lo - 0.04 || hx > hi + 0.04)) continue // 무게중심이 두 발 밖인 조합은 쓰지 않음
             if (!footMatch && hx < lo - 0.03 || (!footMatch && hx > hi + 0.03)) c += 4 + (Math.min(Math.abs(hx - lo), Math.abs(hx - hi)) / torso) * 8
             if (hi - lo > 0.58 * heightM) continue // 다리를 찢는 조합은 쓰지 않음
@@ -367,6 +369,13 @@ export function buildSequence(route, holds, body, heightM) {
     const target = solve(nL, nR, s.hip, { ...opts, prevFeet: ids(s) })
     const cur = feetOfState(s)
     const tgt = feetOfState(target)
+    // 목표에서 벽을 밀 발이 지금 홀드를 딛고 있으면, 그 홀드를 그대로 둬도 되는지 보고 되면 떼지 않음
+    for (const k of [0, 1]) {
+      if (tgt[k].id !== null || cur[k].id === null) continue
+      const keep = [...tgt]
+      keep[k] = cur[k]
+      if (fixed(nL, nR, keep, s.hip, opts)) tgt[k] = cur[k]
+    }
     // 바뀌는 발: 더 많이 올라가야 하는 발부터 옮김
     const changed = [0, 1]
       .filter((k) => !sameFoot(cur[k], tgt[k]))
@@ -380,8 +389,17 @@ export function buildSequence(route, holds, body, heightM) {
       rest.forEach((x, n) => permute([...rest.slice(0, n), ...rest.slice(n + 1)], [...acc, x]))
     }
     permute(limbs, [])
-    orders.sort((a, b) => a.indexOf('hand') - b.indexOf('hand')) // 손을 늦게 옮길수록(발 먼저) 앞에
-    orders.reverse()
+    // 중간에 홀드를 딛는 발이 하나도 없는 순간이 적은 순서 → 손을 늦게 옮기는(발 먼저) 순서 순으로 시도
+    const unsupported = (order) => {
+      const f = [...cur]
+      let n = 0
+      for (const limb of order.slice(0, -1)) {
+        if (limb !== 'hand') f[limb] = tgt[limb]
+        if (f.every((x) => x.id === null)) n++
+      }
+      return n
+    }
+    orders.sort((a, b) => unsupported(a) - unsupported(b) || b.indexOf('hand') - a.indexOf('hand'))
     let plan = null
     // 엄격한 조건으로 먼저 찾고, 없으면 중간 자세만 조건을 완화해서 다시 찾음(사람도 동작 중간엔 잠깐 불편한 자세를 지남)
     for (const loose of [false, true]) for (const order of orders) {
