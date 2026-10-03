@@ -1,0 +1,24 @@
+{
+ "name": "experiment_000",
+ "description": "기준선(baseline): 지금 앱에 들어 있는 3차 모델",
+ "model": "Teachable Machine 이미지 모델(MobileNet 기반 전이 학습), public/models/holds",
+ "training": {
+  "tool": "Teachable Machine",
+  "epochs": "기본값(사용자 설정, 기록 없음)",
+  "batch_size": "기본값",
+  "learning_rate": "기본값",
+  "augmentation": "Teachable Machine 기본"
+ },
+ "dataset": {
+  "version": "v3-tight-crop",
+  "source": "Roboflow 'hold classification'(Capstone, CC BY 4.0) + 직접 모은 볼륨 25장",
+  "crop": "홀드 상자(여유 5%)만 잘라 224x224 회색 바탕",
+  "train_cap": "종류별 최대 60장",
+  "split": "잘라낸 홀드 단위 무작위 85/15 (원본 사진 단위가 아님 → 테스트 58장 중 6장이 학습 사진과 같은 원본에서 나옴)"
+ },
+ "eval": {
+  "test_images": 58,
+  "runner": "node scripts/eval_hold_model.mjs (TensorFlow.js), 지표는 scripts/report_metrics.py",
+  "note": "브라우저에서는 65.5%, Node에서는 63.8%: JPEG 디코딩 차이로 1장 결과가 다름"
+ }
+}

@@ -5,3 +5,4 @@ android/.gradle
 dataset/raw/
 dataset/holds/
 dataset/extra/
+dataset/raw_*/

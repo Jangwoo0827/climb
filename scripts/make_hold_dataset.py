@@ -19,6 +19,7 @@
 """
 import os
 import random
+from collections import Counter
 import shutil
 import sys
 
@@ -199,22 +200,63 @@ def main():
 
     if os.path.isdir(OUT):
         shutil.rmtree(OUT)
-    random.seed(42)
-    total = {}
+    # 원본 사진 단위로 학습/테스트를 나눔: 같은 원본에서 나온 사진(같은 벽 사진의 다른 홀드, 같은 볼륨의 배경만 바꾼 사진)이
+    # 학습과 테스트에 함께 들어가면 테스트 점수가 실제보다 높게 나옴(누수). 완전히 같은 사진(SHA256)은 하나만 남김
+    import hashlib
+    import re
+
+    def source_of(name):
+        stem = os.path.splitext(name)[0]
+        if stem.startswith('extra_'):
+            return re.sub(r'_bg\d+$', '', stem)
+        m = re.match(r'(train|valid|test)_(.+)_\d+$', stem)
+        return m.group(2) if m else stem
+
+    seen_hash = set()
+    dup = 0
+    by_src = {}
     for cls, items in crops.items():
-        if cls not in KEEP or not items:
+        if cls not in KEEP:
             continue
-        random.shuffle(items)
-        n_test = max(1, int(len(items) * TEST_RATIO))
-        train = items[n_test:]
+        for name, img in items:
+            h = hashlib.sha256(img.tobytes()).hexdigest()
+            if h in seen_hash:
+                dup += 1
+                continue
+            seen_hash.add(h)
+            by_src.setdefault(source_of(name), []).append((cls, name, img))
+    sources = sorted(by_src)
+    random.Random(42).shuffle(sources)
+    # 종류별로 테스트가 약 15%가 될 때까지 원본 사진을 통째로 테스트에 넣음
+    want = Counter(c for v in by_src.values() for c, _, _ in v)
+    got = Counter()
+    test_src = set()
+    for src in sources:
+        cls_here = Counter(c for c, _, _ in by_src[src])
+        if any(got[c] + n > max(1, round(want[c] * TEST_RATIO)) for c, n in cls_here.items()):
+            continue
+        test_src.add(src)
+        got.update(cls_here)
+    split = {'train': {}, 'test': {}}
+    for src in sources:
+        part = 'test' if src in test_src else 'train'
+        for cls, name, img in by_src[src]:
+            split[part].setdefault(cls, []).append((name, img))
+    rnd = random.Random(42)
+    total = {}
+    for cls in sorted(want):
+        train = split['train'].get(cls, [])
+        rnd.shuffle(train)
         if MAX_TRAIN and len(train) > MAX_TRAIN:
-            train = train[:MAX_TRAIN]  # 이미 섞여 있으므로 앞에서부터 자르면 무작위로 줄인 것과 같음
-        for part, chunk in (('test', items[:n_test]), ('train', train)):
+            train = train[:MAX_TRAIN]
+        test = split['test'].get(cls, [])
+        for part, chunk in (('test', test), ('train', train)):
             d = os.path.join(OUT, part, cls)
             os.makedirs(d, exist_ok=True)
             for name, img in chunk:
                 img.save(os.path.join(d, name), quality=90)
-        total[cls] = (len(train), n_test)
+        total[cls] = (len(train), len(test))
+    print(f'완전 중복으로 뺀 사진 {dup}장 · 테스트에 넣은 원본 사진 {len(test_src)}개(원본 단위로 나눠 누수 없음)')
 
     with open(os.path.join(OUT, 'ATTRIBUTION.txt'), 'w', encoding='utf-8') as f:
         f.write('이 폴더의 사진은 다음 데이터셋의 홀드 상자를 잘라 만든 것입니다.\n')

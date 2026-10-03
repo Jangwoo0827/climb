@@ -1,0 +1,105 @@
+{
+ "accuracy": 0.6379,
+ "macro_precision": 0.6075,
+ "macro_recall": 0.6312,
+ "macro_f1": 0.6105,
+ "test_total": 58,
+ "per_class": {
+  "crimp": {
+   "precision": 0.933,
+   "recall": 0.636,
+   "f1": 0.757,
+   "test_count": 22
+  },
+  "jug": {
+   "precision": 0.182,
+   "recall": 0.286,
+   "f1": 0.222,
+   "test_count": 7
+  },
+  "pinch": {
+   "precision": 0.615,
+   "recall": 0.615,
+   "f1": 0.615,
+   "test_count": 13
+  },
+  "pocket": {
+   "precision": 0.857,
+   "recall": 1.0,
+   "f1": 0.923,
+   "test_count": 6
+  },
+  "sloper": {
+   "precision": 0.2,
+   "recall": 0.25,
+   "f1": 0.222,
+   "test_count": 4
+  },
+  "volume": {
+   "precision": 0.857,
+   "recall": 1.0,
+   "f1": 0.923,
+   "test_count": 6
+  }
+ },
+ "confusion_matrix": {
+  "labels": [
+   "crimp",
+   "jug",
+   "pinch",
+   "pocket",
+   "sloper",
+   "volume"
+  ],
+  "rows_true_cols_pred": [
+   [
+    14,
+    4,
+    3,
+    0,
+    1,
+    0
+   ],
+   [
+    0,
+    2,
+    2,
+    1,
+    2,
+    0
+   ],
+   [
+    1,
+    3,
+    8,
+    0,
+    1,
+    0
+   ],
+   [
+    0,
+    0,
+    0,
+    6,
+    0,
+    0
+   ],
+   [
+    0,
+    2,
+    0,
+    0,
+    1,
+    1
+   ],
+   [
+    0,
+    0,
+    0,
+    0,
+    0,
+    6
+   ]
+  ]
+ }
+}
