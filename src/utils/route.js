@@ -115,7 +115,7 @@ export function findRoute(holds, body, startIds, finishIds) {
   while (heap.size) {
     const [c, l, r] = heap.pop()
     if (c > (dp.get(key(l, r)) ?? Infinity)) continue
-    if (finish.has(l) || finish.has(r)) {
+    if (finish.has(l) && finish.has(r)) { // 끝: 두 손이 모두 끝 홀드를 잡음(하나면 매칭, 둘이면 하나씩)
       goal = [l, r]
       break
     }
@@ -293,11 +293,19 @@ export function generateRoute(all, body, grade, seed = 1) {
     used.add(cur.id)
   }
   if (hands.length < 4) return null
+  // 끝도 두 손: 마지막 홀드 옆(같은 높이 근처, 팔이 닿는 거리)에 홀드가 있으면 두 번째 끝 홀드로
+  const last = all[hands[hands.length - 1]]
+  const pairEnd = all.filter((h) => !used.has(h.id) && Math.abs(h.my - last.my) < 0.3 && Math.hypot(h.mx - last.mx, h.my - last.my) > 0.2 && Math.hypot(h.mx - last.mx, h.my - last.my) < span * 0.45)
+  const finish2 = pairEnd.length ? pairEnd[Math.floor(rand() * pairEnd.length)] : null
+  if (finish2) {
+    hands.push(finish2.id)
+    used.add(finish2.id)
+  }
   // 발 전용: 손 홀드 아래쪽(다리 길이 범위)에 있는, 손으로 안 쓰는 홀드
   const leg = 0.47 * (span / 1) // 팔 벌린 길이 ≈ 키
   const feet = all
     .filter((h) => !used.has(h.id))
     .filter((h) => hands.some((id) => { const t = all[id]; return h.my < t.my - 0.4 && h.my > t.my - 1.2 - leg * 0.5 && Math.abs(h.mx - t.mx) < 0.7 }))
     .map((h) => h.id)
-  return { hands, start: hands.slice(0, second ? 2 : 1), finish: hands[hands.length - 1], feet }
+  return { hands, start: hands.slice(0, second ? 2 : 1), finish: finish2 ? [last.id, finish2.id] : [last.id], feet }
 }

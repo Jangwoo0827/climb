@@ -35,7 +35,7 @@ function makeDemoWall() {
 }
 
 // 벽 사진 위에 그리는 졸라맨
-function Stickman({ p, sv, headR, hard, label }) {
+function Stickman({ p, sv, headR, hard, label, u }) {
   const line = (pts) => pts.map(sv).join(' ')
   const color = hard ? '#ff8a6b' : '#ffffff'
   const limbs = [
@@ -57,11 +57,11 @@ function Stickman({ p, sv, headR, hard, label }) {
   const [hx, hy] = sv(p.head).split(',')
   return (
     <g>
-      {draw('rgba(0,0,0,0.55)', 0.016)}
-      {draw(color, 0.009)}
-      <circle cx={hx} cy={hy} r={headR} fill="rgba(0,0,0,0.45)" stroke={color} strokeWidth="0.009" />
+      {draw('rgba(0,0,0,0.6)', 7 * u)}
+      {draw(color, 4 * u)}
+      <circle cx={hx} cy={hy} r={Math.max(headR, 8 * u)} fill="rgba(0,0,0,0.45)" stroke={color} strokeWidth={4 * u} />
       {label && (
-        <text x={Number(hx) + headR + 0.015} y={Number(hy) + 0.014} textAnchor="start" fontSize="0.04" fontWeight="800" fill="#c77dff" stroke="#000" strokeWidth="0.005" paintOrder="stroke">
+        <text x={Number(hx) + Math.max(headR, 8 * u) + 6 * u} y={Number(hy) + 6 * u} textAnchor="start" fontSize={17 * u} fontWeight="800" fill="#c77dff" stroke="#000" strokeWidth={3 * u} paintOrder="stroke">
           {label}
         </text>
       )}
@@ -424,6 +424,7 @@ export default function App() {
   // 미터 -> SVG 좌표 (viewBox 높이 1 = 벽 높이)
   const k = photo ? photo.aspect / wallWidth : 1
   const sv = (p) => `${p.x * k},${1 - p.y * k}`
+  const u = fit.h ? 1 / fit.h : 0.002 // 화면 1픽셀에 해당하는 SVG 단위: 사진 크기와 상관없이 표시가 읽히게
 
   // 루트 생성(GenClimb 아이디어): 사진 속 모든 홀드에서 고른 난이도에 맞는 루트를 만듦. 누를 때마다 다른 루트
   const [genOpen, setGenOpen] = useState(false)
@@ -441,7 +442,7 @@ export default function App() {
       setGenMsg('이 사진에서는 그 난이도의 루트를 만들지 못했어요. 벽 너비나 난이도를 바꿔 보세요')
       return
     }
-    const role = (i) => (res.start.includes(i) ? 'start' : i === res.finish ? 'finish' : undefined)
+    const role = (i) => (res.start.includes(i) ? 'start' : res.finish.includes(i) ? 'finish' : undefined)
     setHolds([
       ...res.hands.map((i) => ({ ...allHolds[i], role: role(i) })),
       ...res.feet.map((i) => ({ ...allHolds[i], footOnly: true })),
@@ -449,6 +450,7 @@ export default function App() {
     setTarget({ kind: 'gen' })
     setFrameIdx(0)
     setMode('edit')
+    setGenOpen(false) // 루트를 만들면 난이도 줄을 접어 벽 사진을 크게
     setGenMsg(`손 홀드 ${res.hands.length}개 · 발 전용 ${res.feet.length}개로 V${grade} 목표 루트를 만들었어요`)
   }
 
@@ -512,45 +514,45 @@ export default function App() {
                           key={j}
                           x1={a.nx * photo.aspect} y1={a.ny} x2={b.nx * photo.aspect} y2={b.ny}
                           stroke={plan.route.steps[j].dyno ? '#c77dff' : '#ffd400'}
-                          strokeWidth="0.008"
-                          strokeDasharray={plan.route.steps[j].dyno ? '0.02 0.014' : undefined}
+                          strokeWidth={4 * u}
+                          strokeDasharray={plan.route.steps[j].dyno ? `${9 * u} ${6 * u}` : undefined}
                         />
                       )
                     })}
                   {fig && shownPose && fig.feetInfo.map((f) =>
                     f.kind === 'smear' ? (
                       // 스미어: 홀드 없이 벽을 미는 발. 발바닥이 벽에 닿아 있음을 짧은 선으로 표시
-                      <line key={'sm' + f.side} x1={Number(sv(shownPose[f.side === 'L' ? 'footL' : 'footR']).split(',')[0]) - 0.022} x2={Number(sv(shownPose[f.side === 'L' ? 'footL' : 'footR']).split(',')[0]) + 0.022} y1={Number(sv(shownPose[f.side === 'L' ? 'footL' : 'footR']).split(',')[1]) + 0.008} y2={Number(sv(shownPose[f.side === 'L' ? 'footL' : 'footR']).split(',')[1]) + 0.008} stroke="#4dd0ff" strokeWidth="0.009" strokeLinecap="round" />
+                      <line key={'sm' + f.side} x1={Number(sv(shownPose[f.side === 'L' ? 'footL' : 'footR']).split(',')[0]) - 10 * u} x2={Number(sv(shownPose[f.side === 'L' ? 'footL' : 'footR']).split(',')[0]) + 10 * u} y1={Number(sv(shownPose[f.side === 'L' ? 'footL' : 'footR']).split(',')[1]) + 4 * u} y2={Number(sv(shownPose[f.side === 'L' ? 'footL' : 'footR']).split(',')[1]) + 4 * u} stroke="#4dd0ff" strokeWidth={4 * u} strokeLinecap="round" />
                     ) : null,
                   )}
-                  {fig && shownPose && <Stickman p={shownPose} sv={sv} headR={0.06 * (height / 100) * k} hard={step?.hard} label={fig.airborne ? '점프!' : null} />}
+                  {fig && shownPose && <Stickman p={shownPose} sv={sv} u={u} headR={0.06 * (height / 100) * k} hard={step?.hard} label={fig.airborne ? '점프!' : null} />}
                   {typedHolds.map((h, i) =>
                     h.type === 'volume' && h.extent ? (
-                      <circle key={i} cx={h.x * photo.aspect} cy={h.y} r={Math.sqrt((h.size * photo.aspect) / Math.PI) * 0.85} fill="none" stroke="#b0e0ff" strokeWidth="0.006" strokeDasharray="0.02 0.014" />
+                      <circle key={i} cx={h.x * photo.aspect} cy={h.y} r={Math.sqrt((h.size * photo.aspect) / Math.PI) * 0.85} fill="none" stroke="#b0e0ff" strokeWidth={2.5 * u} strokeDasharray={`${8 * u} ${5 * u}`} />
                     ) : (
-                      <circle key={i} cx={h.x * photo.aspect} cy={h.y} r="0.016" fill="none" stroke="#fff" strokeWidth="0.005" />
+                      <circle key={i} cx={h.x * photo.aspect} cy={h.y} r={8 * u} fill="none" stroke="#fff" strokeWidth={2 * u} />
                     ),
                   )}
                   {usable.map((u, i) =>
-                    u.type === 'volume' ? <circle key={'v' + i} cx={u.x * photo.aspect} cy={u.y} r="0.009" fill="#b0e0ff" stroke="#000" strokeWidth="0.003" /> : null,
+                    u.type === 'volume' ? <circle key={'v' + i} cx={u.x * photo.aspect} cy={u.y} r={4 * u} fill="#b0e0ff" stroke="#000" strokeWidth={1.5 * u} /> : null,
                   )}
                   {footOrder.map((id, n) => {
                     const h = plan.m[id]
                     const now = fig?.feetOnHolds.includes(id)
                     return (
-                      <text key={'fo' + id} x={h.nx * photo.aspect + 0.03} y={h.ny + 0.012} fontSize="0.026" fontWeight="800" fill={now ? '#4dd0ff' : '#9bdcf5'} opacity={now ? 1 : 0.7} stroke="#000" strokeWidth="0.005" paintOrder="stroke">
+                      <text key={'fo' + id} x={h.nx * photo.aspect + 12 * u} y={h.ny + 5 * u} fontSize={13 * u} fontWeight="800" fill={now ? '#4dd0ff' : '#9bdcf5'} opacity={now ? 1 : 0.75} stroke="#000" strokeWidth={3 * u} paintOrder="stroke">
                         발{n + 1}
                       </text>
                     )
                   })}
                   {[...new Set(fig?.feetOnHolds ?? [])].map((id) => (
-                    <circle key={'f' + id} cx={plan.m[id].nx * photo.aspect} cy={plan.m[id].ny} r="0.026" fill="none" stroke="#4dd0ff" strokeWidth="0.007" />
+                    <circle key={'f' + id} cx={plan.m[id].nx * photo.aspect} cy={plan.m[id].ny} r={12 * u} fill="none" stroke="#4dd0ff" strokeWidth={3.5 * u} />
                   ))}
                   {holds.map((h, i) =>
                     h.role ? (
                       <g key={'r' + i}>
-                        <circle cx={h.x * photo.aspect} cy={h.y} r="0.034" fill="none" stroke={h.role === 'start' ? '#3ddc84' : '#ff4d8d'} strokeWidth="0.008" />
-                        <text x={h.x * photo.aspect} y={h.y - 0.045} textAnchor="middle" fontSize="0.03" fontWeight="700" fill={h.role === 'start' ? '#3ddc84' : '#ff4d8d'} stroke="#000" strokeWidth="0.004" paintOrder="stroke">
+                        <circle cx={h.x * photo.aspect} cy={h.y} r={15 * u} fill="none" stroke={h.role === 'start' ? '#3ddc84' : '#ff4d8d'} strokeWidth={4 * u} />
+                        <text x={h.x * photo.aspect} y={h.y - 20 * u} textAnchor="middle" fontSize={14 * u} fontWeight="800" fill={h.role === 'start' ? '#3ddc84' : '#ff4d8d'} stroke="#000" strokeWidth={3 * u} paintOrder="stroke">
                           {h.role === 'start' ? '시작' : '끝'}
                         </text>
                       </g>
@@ -561,8 +563,8 @@ export default function App() {
                     const on = s.index - 1 === idx
                     return (
                       <g key={s.index}>
-                        <circle cx={h.nx * photo.aspect} cy={h.ny} r={on ? 0.03 : 0.022} fill={s.dyno ? '#c77dff' : s.hard ? '#ff5a3c' : '#ffd400'} />
-                        <text x={h.nx * photo.aspect} y={h.ny + 0.011} textAnchor="middle" fontSize="0.03" fontWeight="700" fill="#111">
+                        <circle cx={h.nx * photo.aspect} cy={h.ny} r={on ? 13 * u : 10 * u} fill={s.dyno ? '#c77dff' : s.hard ? '#ff5a3c' : '#ffd400'} />
+                        <text x={h.nx * photo.aspect} y={h.ny + 4.5 * u} textAnchor="middle" fontSize={13 * u} fontWeight="800" fill="#111">
                           {s.index}
                         </text>
                       </g>
@@ -573,7 +575,7 @@ export default function App() {
                     const show = mode === 'type' || (step && plan?.m[step.to]?.parent === i)
                     if (!show) return null
                     return (
-                      <text key={'t' + i} x={h.x * photo.aspect} y={h.y + 0.05} textAnchor="middle" fontSize="0.026" fontWeight="700" fill="#fff" stroke="#000" strokeWidth="0.005" paintOrder="stroke">
+                      <text key={'t' + i} x={h.x * photo.aspect} y={h.y + 26 * u} textAnchor="middle" fontSize={12 * u} fontWeight="700" fill="#fff" stroke="#000" strokeWidth={3 * u} paintOrder="stroke">
                         {HOLD_TYPES[h.type]?.name}
                       </text>
                     )
@@ -584,6 +586,9 @@ export default function App() {
             )}
           </div>
 
+          {/* 오른쪽 패널: 루트 생성, 모드, 단계 안내 (벽 사진은 왼쪽에 크게) */}
+          {photo && (genOpen || target) && (
+          <aside className="side">
           {photo && genOpen && (
             <div className="genbar">
               <div className="grades">
@@ -645,7 +650,7 @@ export default function App() {
                       </>
                     ) : step ? (
                       <>
-                        <h3>{frame.k === 'jump' ? '🚀 ' : ''}{step.dyno ? '양손' : step.hand === 'L' ? '왼손' : '오른손'}을 {step.index}번 홀드로 {step.dyno ? '점프' : ''} <small>{Math.round(step.reach * 100)}cm</small></h3>
+                        <h3>{frame.k === 'jump' ? '🚀 ' : ''}{step.dyno ? '양손' : step.hand === 'L' ? '왼손' : '오른손'}을 {step.index}번 홀드로 {step.dyno ? '점프' : ''} <small>{step.move === 'match' ? '두 손 모으기' : `${Math.round(step.reach * 100)}cm`}</small></h3>
                         <ul>{step.tips.map((t) => <li key={t}>{t}</li>)}</ul>
                       </>
                     ) : (
@@ -658,6 +663,8 @@ export default function App() {
                 </>
               )}
             </div>
+          )}
+          </aside>
           )}
         </main>
       )}

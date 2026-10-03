@@ -116,3 +116,39 @@ main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .grades button.on { background: var(--accent); color: #111; }
 .genbtn { border: 0; border-radius: 10px; min-height: 40px; padding: 0 12px; font-weight: 700; background: #3b3358; color: #d9c6ff; }
 .genbar small { width: 100%; color: var(--sub); font-size: 12px; }
+
+/* 사진을 크게: 아래 버튼 줄과 안내를 얇게 */
+.course { gap: 6px; }
+.modes { gap: 4px; overflow-x: auto; }
+.modes button { min-height: 36px; padding: 6px 8px; font-size: 12px; white-space: nowrap; flex: 1 0 auto; }
+.sheet { max-height: 30%; padding: 8px 10px; gap: 6px; }
+.nav { height: 42px; width: 48px; }
+.nav.play { width: 42px; }
+.stepinfo b { font-size: 15px; }
+.stepinfo small { font-size: 11px; }
+.pills { gap: 4px; }
+.pill { min-height: 28px; padding: 4px 10px; font-size: 12px; }
+.tips h3 { font-size: 14px; }
+.tips ul { font-size: 13px; }
+.top { min-height: 48px; padding: 4px 12px; }
+.icon { width: 40px; height: 40px; }
+.grades button { min-height: 34px; font-size: 13px; }
+.genbtn { min-height: 34px; }
+
+/* 벽은 왼쪽, 버튼과 안내는 오른쪽 세로 패널 */
+.app { max-width: 1100px; }
+.course { flex-direction: row; align-items: stretch; }
+.stage { flex: 1 1 58%; min-width: 0; }
+.side { flex: 0 0 clamp(140px, 37%, 400px); min-width: 0; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; }
+.side .modes { display: grid; grid-template-columns: 1fr 1fr; overflow: visible; }
+.side .modes button { min-height: 34px; padding: 4px; }
+.side .sheet { max-height: none; flex: 1; min-height: 0; overflow-y: auto; }
+.side .stepper { flex-wrap: wrap; justify-content: center; gap: 6px; }
+.side .stepinfo { order: -1; flex-basis: 100%; }
+.side .nav { flex: 1; width: auto; min-width: 40px; }
+.side .grades { flex-wrap: wrap; }
+.side .grades button { flex: 1 0 28%; }
+.side .genbtn { width: 100%; }
+.side .pills { flex-wrap: wrap; overflow: visible; }
+
+@media (max-width: 480px) { .ver { display: none; } .tips ul { font-size: 12px; } .tips h3 { font-size: 13px; } }
