@@ -1,0 +1,125 @@
+"""Roboflow에서 받은 홀드 데이터셋(YOLO 형식)을 Teachable Machine용 종류별 폴더로 만든다.
+
+데이터: "hold classification" by Capstone, Roboflow Universe, CC BY 4.0
+        https://universe.roboflow.com/capstone-kz2o9/hold-classification
+
+사용법:
+  1) 위 페이지에서 로그인 → Download Dataset → 형식 "YOLOv8" → zip 다운로드
+  2) zip을 풀어 climb/dataset/raw/ 에 넣기 (안에 data.yaml, train/, valid/, test/ 가 있어야 함)
+  3) python scripts/make_hold_dataset.py
+
+결과: climb/dataset/holds/
+  train/<종류>/*.jpg   ← Teachable Machine 각 클래스에 이 폴더 사진을 업로드
+  test/<종류>/*.jpg    ← 학습에 넣지 말고 정확도 확인용으로만 사용
+  ATTRIBUTION.txt      ← 출처·라이선스 표기(CC BY 4.0은 출처 표기 필수)
+"""
+import os
+import random
+import shutil
+import sys
+
+from PIL import Image, ImageOps
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+RAW = os.path.join(ROOT, 'dataset', 'raw')
+OUT = os.path.join(ROOT, 'dataset', 'holds')
+SIZE = 224  # Teachable Machine 입력 크기
+PAD = 0.15  # 상자 바깥으로 15% 여유(홀드 가장자리가 잘리지 않게)
+MIN_PX = 24  # 이보다 작은 상자는 너무 흐려서 버림
+TEST_RATIO = 0.15
+KEEP = {'jug', 'crimp', 'sloper', 'pinch', 'pocket'}  # 'foot'(발 홀드)은 모양 종류가 아니라 제외
+
+
+def read_names(path):
+    """data.yaml에서 클래스 이름 목록을 읽음(yaml 라이브러리 없이)."""
+    text = open(path, encoding='utf-8').read()
+    for line in text.splitlines():
+        line = line.strip()
+        if line.startswith('names:') and '[' in line:
+            inner = line.split('[', 1)[1].rsplit(']', 1)[0]
+            return [n.strip().strip("'\"") for n in inner.split(',')]
+    # 여러 줄 형식: names:\n  0: jug  또는  - jug
+    names, on = [], False
+    for line in text.splitlines():
+        if line.strip().startswith('names:'):
+            on = True
+            continue
+        if on:
+            s = line.strip()
+            if not s or (not s.startswith('-') and ':' not in s):
+                break
+            names.append(s.split(':', 1)[1].strip().strip("'\"") if ':' in s else s[1:].strip().strip("'\""))
+    return names
+
+
+def main():
+    yaml = os.path.join(RAW, 'data.yaml')
+    if not os.path.exists(yaml):
+        sys.exit(f'data.yaml이 없어요. Roboflow에서 YOLOv8 형식으로 받아 {RAW} 에 풀어 주세요.')
+    names = read_names(yaml)
+    print('클래스:', names)
+
+    crops = {n: [] for n in names}
+    for split in ('train', 'valid', 'test'):
+        img_dir = os.path.join(RAW, split, 'images')
+        lbl_dir = os.path.join(RAW, split, 'labels')
+        if not os.path.isdir(img_dir):
+            continue
+        for fn in sorted(os.listdir(img_dir)):
+            stem = os.path.splitext(fn)[0]
+            lbl = os.path.join(lbl_dir, stem + '.txt')
+            if not os.path.exists(lbl):
+                continue
+            im = ImageOps.exif_transpose(Image.open(os.path.join(img_dir, fn))).convert('RGB')
+            W, H = im.size
+            for k, line in enumerate(open(lbl, encoding='utf-8')):
+                parts = line.split()
+                if len(parts) < 5:
+                    continue
+                cls = names[int(parts[0])]
+                vals = [float(v) for v in parts[1:]]
+                if len(vals) == 4:  # 상자: cx cy w h (0~1)
+                    cx, cy, bw, bh = vals
+                else:  # 다각형(분할) 형식이면 꼭짓점을 감싸는 상자로
+                    xs, ys = vals[0::2], vals[1::2]
+                    cx, cy = (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2
+                    bw, bh = max(xs) - min(xs), max(ys) - min(ys)
+                side = max(bw * W, bh * H) * (1 + 2 * PAD)  # 정사각형으로 잘라 비율이 찌그러지지 않게
+                if side < MIN_PX:
+                    continue
+                x0, y0 = cx * W - side / 2, cy * H - side / 2
+                crop = im.crop((round(x0), round(y0), round(x0 + side), round(y0 + side))).resize((SIZE, SIZE), Image.LANCZOS)
+                crops[cls].append((f'{split}_{stem}_{k}.jpg', crop))
+
+    if os.path.isdir(OUT):
+        shutil.rmtree(OUT)
+    random.seed(42)
+    total = {}
+    for cls, items in crops.items():
+        if cls not in KEEP or not items:
+            continue
+        random.shuffle(items)
+        n_test = max(1, int(len(items) * TEST_RATIO))
+        for part, chunk in (('test', items[:n_test]), ('train', items[n_test:])):
+            d = os.path.join(OUT, part, cls)
+            os.makedirs(d, exist_ok=True)
+            for name, img in chunk:
+                img.save(os.path.join(d, name), quality=90)
+        total[cls] = (len(items) - n_test, n_test)
+
+    with open(os.path.join(OUT, 'ATTRIBUTION.txt'), 'w', encoding='utf-8') as f:
+        f.write('이 폴더의 사진은 다음 데이터셋의 홀드 상자를 잘라 만든 것입니다.\n')
+        f.write('"hold classification" by Capstone, Roboflow Universe\n')
+        f.write('https://universe.roboflow.com/capstone-kz2o9/hold-classification\n')
+        f.write('License: CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)\n')
+        f.write('변경 사항: 상자 영역을 정사각형으로 잘라 224x224로 크기 조정, 종류별 폴더로 분류, 학습/테스트로 나눔\n')
+
+    print('\n종류별 사진 수 (학습 / 테스트):')
+    for cls, (tr, te) in sorted(total.items(), key=lambda x: -sum(x[1])):
+        print(f'  {cls:8s} {tr:5d} / {te:4d}')
+    print('\n결과 폴더:', OUT)
+
+
+if __name__ == '__main__':
+    main()

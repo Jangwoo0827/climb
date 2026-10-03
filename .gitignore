@@ -2,3 +2,4 @@ node_modules
 dist
 android/app/build
 android/.gradle
+dataset/raw/
