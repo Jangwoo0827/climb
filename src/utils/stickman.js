@@ -165,8 +165,8 @@ export function figureAt(route, holds, body, heightM, stepIndex, phase = 'land')
         const idealL = { x: hx - off, y: fy }
         const idealR = { x: hx + off, y: fy }
         const cands = [
-          { p: idealL, c: 6, id: null },
-          { p: idealR, c: 6, id: null },
+          { p: idealL, c: 30, id: null }, // 벽 밀기는 밟을 홀드가 정말 없을 때만
+          { p: idealR, c: 30, id: null },
         ]
         holds.forEach((h) => {
           if (h.id === L || h.id === R || h.my < FOOT_CLEAR) return
@@ -187,14 +187,16 @@ export function figureAt(route, holds, body, heightM, stepIndex, phase = 'land')
         let f2 = null
         let footCost = Infinity
         for (let i = 0; i < cands.length; i++)
-          for (let j = i + 1; j < cands.length; j++) {
+          for (let j = i; j < cands.length; j++) {
             const a = cands[i]
             const b = cands[j]
-            if (dist(a.p, b.p) < 0.16 * heightM) continue
+            const footMatch = i === j // 합발: 한 홀드에 두 발을 함께 올림
+            if (footMatch && a.id === null) continue
+            if (!footMatch && dist(a.p, b.p) < 0.16 * heightM) continue
             const lo = Math.min(a.p.x, b.p.x)
             const hi = Math.max(a.p.x, b.p.x)
-            let c = a.c + b.c
-            if (hx < lo - 0.03 || hx > hi + 0.03) c += 4 + (Math.min(Math.abs(hx - lo), Math.abs(hx - hi)) / torso) * 8
+            let c = a.c + b.c + (footMatch ? 2 : 0) // 합발은 두 발을 벌린 삼각형보다 조금 덜 안정적
+            if (!footMatch && hx < lo - 0.03 || (!footMatch && hx > hi + 0.03)) c += 4 + (Math.min(Math.abs(hx - lo), Math.abs(hx - hi)) / torso) * 8
             if (hi - lo > 0.58 * heightM) continue // 다리를 찢는 조합은 쓰지 않음
             if (c < footCost) {
               footCost = c
@@ -209,6 +211,7 @@ export function figureAt(route, holds, body, heightM, stepIndex, phase = 'land')
         for (const lean of [-0.1, -0.05, 0, 0.05, 0.1]) { // 상체는 크게 기울이지 않음
           const S = { x: hx + lean, y: hy + torso }
           let cost = footCost
+          let reachOk = true
 
           // 팔: 동작에 맞는 만큼 펴는 게 좋고, 완전히 뻗는 건 감점. 손이 반대편 어깨 너머면 감점
           for (const [dx, h, wrong] of [
@@ -218,7 +221,8 @@ export function figureAt(route, holds, body, heightM, stepIndex, phase = 'land')
             const isMoving = !!opts?.movingPt && Math.abs(h.x - opts.movingPt.x) < 1e-6 && Math.abs(h.y - opts.movingPt.y) < 1e-6
             const target = armTarget(opts?.move, isMoving)
             const d = dist({ x: S.x + dx, y: S.y }, h)
-            if (d > 0.97 * arm) cost += 200 * ((d - 0.97 * arm) / arm + 0.05) // 팔이 닿지 않는 자세는 사실상 금지
+            if (d > arm * 0.999) reachOk = false // 팔이 닿지 않는 자세는 고르지 않음
+            if (d > 0.97 * arm) cost += 200 * ((d - 0.97 * arm) / arm + 0.05)
             else cost += ((d - target * arm) / arm) ** 2 * 30 // 팔을 곧게 펴고 엉덩이를 내려 뼈로 매달림(팔 힘을 아낌)
             if (wrong(h)) cost += 4 // 손이 가슴 앞이나 반대편이면 팔이 몸에 걸림
             // 실제 팔꿈치 위치를 계산해 위로 꺾이거나(치킨 윙) 몸통에 닿으면 감점
@@ -239,7 +243,8 @@ export function figureAt(route, holds, body, heightM, stepIndex, phase = 'land')
           cost += (lean / torso) ** 2 * 0.5
           if (prev) cost += 1.5 * dist(hip, prev) ** 2
 
-          if (!best || cost < best.cost) best = { cost, hip, S, f1, f2, sit }
+          if (!reachOk && best?.reachOk) continue
+          if (!best || (reachOk && !best.reachOk) || cost < best.cost) best = { cost, hip, S, f1, f2, sit, reachOk }
         }
       }
     }

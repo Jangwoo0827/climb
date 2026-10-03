@@ -180,7 +180,7 @@ export const FEET = {
     auto: true,
   },
   footmatch: {
-    name: '발 매칭',
+    name: '합발',
     en: 'Foot match',
     desc: '한 홀드에 두 발을 함께 올리는 거예요. 발 닿는 홀드가 하나뿐일 때 발을 허공에 두지 않고 안정적으로 서요.',
     tip: '먼저 올린 발을 홀드 한쪽으로 비켜 자리를 만들고 다른 발을 나란히 올려요',
