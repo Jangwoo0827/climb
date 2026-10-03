@@ -225,6 +225,10 @@ export function figureAt(route, holds, body, heightM, stepIndex, phase = 'land')
           }
 
           cost += ((hx - fx) / torso) ** 2 * 1.2 // 체중이 발 위에 실리도록
+          // 엉덩이를 내려 앉듯이 매달림: 팔을 곧게 폈을 때의 엉덩이 높이보다 높으면 감점
+          // 높은 손에 팔을 곧게 펴고 매달렸을 때의 엉덩이 높이가 목표(낮은 손은 굽혀도 됨). 맨틀링만 예외
+          const idealHip = Math.max(hl.y, hr.y) - 0.92 * arm - torso
+          cost += (Math.max(0, hy - idealHip) / leg) * (opts?.move === 'mantle' ? 2 : 10)
           const footY = Math.min(f1.p.y, f2.p.y)
           cost += Math.max(0, 0.45 * leg - (hy - footY)) / leg * 4 // 엉덩이가 발에 완전히 주저앉는 것만 감점(적당히 낮춘 엉덩이는 안정적)
           cost += ((hx - mid.x) / torso) ** 2 * 0.3

@@ -23,6 +23,7 @@ let steps = 0
 let longMoves = 0
 let bentArms = 0
 let footMatch = 0
+let hipHigh = 0
 let bad = 0
 for (const [name, sc] of Object.entries(scenes))
   for (const W of [3.5, 5])
@@ -65,6 +66,7 @@ for (const [name, sc] of Object.entries(scenes))
               const onHold = fig.feetInfo.filter((f) => f.id !== null).length
               if (onHold === 0) smearBoth++
               if (fm) footMatch++
+              if (fig.move !== 'mantle' && p.hip.y > Math.max(p.hl.y, p.hr.y) - 0.92 * arm - 0.3 * H + 0.25) hipHigh++
               if (onHold === 1) oneFoot++
               // 삼각형 기본자세: 엉덩이가 두 발 사이(밑변 안)에 있어야 함(플래깅·싯 스타트 제외)
               const lo = Math.min(p.footL.x, p.footR.x) - 0.05
@@ -78,5 +80,5 @@ for (const [name, sc] of Object.entries(scenes))
             }
           }
       }
-console.log('자세', total, '문제', bad, '· 발이 홀드에 0개', smearBoth, '· 1개', oneFoot, '· 손 이동', steps, '중 크게 뻗는 이동', longMoves, '· 팔 굽혀 매달림', bentArms, '· 발 매칭', footMatch)
+console.log('자세', total, '문제', bad, '· 발이 홀드에 0개', smearBoth, '· 1개', oneFoot, '· 손 이동', steps, '중 크게 뻗는 이동', longMoves, '· 팔 굽혀 매달림', bentArms, '· 발 매칭', footMatch, '· 엉덩이 높음', hipHigh)
 process.exitCode = bad ? 1 : 0
