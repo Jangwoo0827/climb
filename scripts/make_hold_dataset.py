@@ -34,6 +34,55 @@ TEST_RATIO = 0.15
 KEEP = {'jug', 'crimp', 'sloper', 'pinch', 'pocket', 'volume'}  # 'foot'(발 홀드)은 모양 종류가 아니라 제외
 
 
+def wall_patches(n, rand):
+    """원본 벽 사진에서 무작위로 정사각형 조각을 잘라 배경으로 씀"""
+    paths = []
+    for split in ('train', 'valid', 'test'):
+        d = os.path.join(RAW, split, 'images')
+        if os.path.isdir(d):
+            paths += [os.path.join(d, f) for f in os.listdir(d)]
+    out = []
+    for _ in range(n):
+        if not paths:
+            break
+        im = Image.open(rand.choice(paths)).convert('RGB')
+        w, h = im.size
+        side = rand.randint(min(w, h) // 4, min(w, h) // 2)
+        x, y = rand.randint(0, w - side), rand.randint(0, h - side)
+        out.append(im.crop((x, y, x + side, y + side)).resize((SIZE, SIZE), Image.LANCZOS))
+    return out
+
+
+def has_plain_bg(im):
+    """가장자리 대부분이 흰색에 가까우면 제품 사진처럼 배경이 비어 있는 사진"""
+    px = im.load()
+    w, h = im.size
+    edge = [px[x, 0] for x in range(w)] + [px[x, h - 1] for x in range(w)] + [px[0, y] for y in range(h)] + [px[w - 1, y] for y in range(h)]
+    light = sum(1 for r, g, b in edge if min(r, g, b) > 215 and max(r, g, b) - min(r, g, b) < 25)
+    return light / len(edge) > 0.6
+
+
+def swap_bg(im, bg):
+    """가장자리와 이어진 흰 배경을 벽 사진 조각으로 바꿈(물체 안쪽의 흰 부분은 그대로)"""
+    w, h = im.size
+    px = im.load()
+    is_bg = lambda c: min(c) > 205 and max(c) - min(c) < 30
+    mask = Image.new('L', (w, h), 0)
+    mp = mask.load()
+    stack = [(x, y) for x in range(w) for y in (0, h - 1)] + [(x, y) for y in range(h) for x in (0, w - 1)]
+    seen = set()
+    while stack:
+        x, y = stack.pop()
+        if (x, y) in seen or not (0 <= x < w and 0 <= y < h) or not is_bg(px[x, y]):
+            continue
+        seen.add((x, y))
+        mp[x, y] = 255
+        stack += [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)]
+    from PIL import ImageFilter
+    mask = mask.filter(ImageFilter.GaussianBlur(1.2))
+    return Image.composite(bg, im, mask)
+
+
 def read_names(path):
     """data.yaml에서 클래스 이름 목록을 읽음(yaml 라이브러리 없이)."""
     text = open(path, encoding='utf-8').read()
@@ -96,6 +145,7 @@ def main():
                 crops[cls].append((f'{split}_{stem}_{k}.jpg', crop))
 
     # 직접 찍은 사진(extra/<종류>/): 가운데를 정사각형으로 잘라 같은 크기로
+    bg_rand = random.Random(7)
     if os.path.isdir(EXTRA):
         for cls in sorted(os.listdir(EXTRA)):
             d = os.path.join(EXTRA, cls)
@@ -106,7 +156,13 @@ def main():
                     continue
                 im = ImageOps.exif_transpose(Image.open(os.path.join(d, fn))).convert('RGB')
                 im = ImageOps.fit(im, (SIZE, SIZE), Image.LANCZOS)
-                crops.setdefault(cls, []).append((f'extra_{os.path.splitext(fn)[0]}.jpg', im))
+                stem = os.path.splitext(fn)[0]
+                if has_plain_bg(im):
+                    # 흰 배경 제품 사진: 배경을 벽 사진 조각으로 바꾼 두 장으로(모델이 '흰 배경'을 외우지 않게)
+                    for j, bg in enumerate(wall_patches(2, bg_rand)):
+                        crops.setdefault(cls, []).append((f'extra_{stem}_bg{j}.jpg', swap_bg(im, bg)))
+                else:
+                    crops.setdefault(cls, []).append((f'extra_{stem}.jpg', im))
 
     if os.path.isdir(OUT):
         shutil.rmtree(OUT)
@@ -130,7 +186,7 @@ def main():
         f.write('https://universe.roboflow.com/capstone-kz2o9/hold-classification\n')
         f.write('License: CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)\n')
         f.write('변경 사항: 상자 영역을 정사각형으로 잘라 224x224로 크기 조정, 종류별 폴더로 분류, 학습/테스트로 나눔\n')
-        f.write('파일 이름이 extra_ 로 시작하는 사진은 직접 찍은 사진입니다(위 라이선스와 무관).\n')
+        f.write('파일 이름이 extra_ 로 시작하는 사진은 따로 넣은 사진입니다(위 라이선스와 무관). 이름이 _bg0, _bg1 로 끝나면 흰 배경을 위 데이터셋의 벽 사진 조각으로 바꾼 것입니다.\n')
 
     print('\n종류별 사진 수 (학습 / 테스트):')
     for cls, (tr, te) in sorted(total.items(), key=lambda x: -sum(x[1])):
