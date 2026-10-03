@@ -9,6 +9,8 @@
   3) (선택) 직접 찍은 사진은 climb/dataset/extra/<종류>/ 에 넣기. 예: extra/volume/ 에 볼륨 사진
      사진 한 장에 홀드(볼륨) 하나가 가운데 오게 찍거나 잘라 두면 됨
   4) python scripts/make_hold_dataset.py
+     종류별 학습 사진 수를 맞추려면: python scripts/make_hold_dataset.py --max-train 60
+     (많은 종류만 무작위로 줄임. 테스트 사진은 그대로라 이전 모델과 같은 기준으로 비교 가능)
 
 결과: climb/dataset/holds/
   train/<종류>/*.jpg   ← Teachable Machine 각 클래스에 이 폴더 사진을 업로드
@@ -31,6 +33,7 @@ SIZE = 224  # Teachable Machine 입력 크기
 PAD = 0.15  # 상자 바깥으로 15% 여유(홀드 가장자리가 잘리지 않게)
 MIN_PX = 24  # 이보다 작은 상자는 너무 흐려서 버림
 TEST_RATIO = 0.15
+MAX_TRAIN = int(sys.argv[sys.argv.index('--max-train') + 1]) if '--max-train' in sys.argv else 0  # 종류별 학습 사진 상한(0이면 제한 없음)
 KEEP = {'jug', 'crimp', 'sloper', 'pinch', 'pocket', 'volume'}  # 'foot'(발 홀드)은 모양 종류가 아니라 제외
 
 
@@ -185,12 +188,15 @@ def main():
             continue
         random.shuffle(items)
         n_test = max(1, int(len(items) * TEST_RATIO))
-        for part, chunk in (('test', items[:n_test]), ('train', items[n_test:])):
+        train = items[n_test:]
+        if MAX_TRAIN and len(train) > MAX_TRAIN:
+            train = train[:MAX_TRAIN]  # 이미 섞여 있으므로 앞에서부터 자르면 무작위로 줄인 것과 같음
+        for part, chunk in (('test', items[:n_test]), ('train', train)):
             d = os.path.join(OUT, part, cls)
             os.makedirs(d, exist_ok=True)
             for name, img in chunk:
                 img.save(os.path.join(d, name), quality=90)
-        total[cls] = (len(items) - n_test, n_test)
+        total[cls] = (len(train), n_test)
 
     with open(os.path.join(OUT, 'ATTRIBUTION.txt'), 'w', encoding='utf-8') as f:
         f.write('이 폴더의 사진은 다음 데이터셋의 홀드 상자를 잘라 만든 것입니다.\n')
