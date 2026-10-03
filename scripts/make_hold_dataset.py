@@ -6,7 +6,9 @@
 사용법:
   1) 위 페이지에서 로그인 → Download Dataset → 형식 "YOLOv8" → zip 다운로드
   2) zip을 풀어 climb/dataset/raw/ 에 넣기 (안에 data.yaml, train/, valid/, test/ 가 있어야 함)
-  3) python scripts/make_hold_dataset.py
+  3) (선택) 직접 찍은 사진은 climb/dataset/extra/<종류>/ 에 넣기. 예: extra/volume/ 에 볼륨 사진
+     사진 한 장에 홀드(볼륨) 하나가 가운데 오게 찍거나 잘라 두면 됨
+  4) python scripts/make_hold_dataset.py
 
 결과: climb/dataset/holds/
   train/<종류>/*.jpg   ← Teachable Machine 각 클래스에 이 폴더 사진을 업로드
@@ -23,12 +25,13 @@ from PIL import Image, ImageOps
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 RAW = os.path.join(ROOT, 'dataset', 'raw')
+EXTRA = os.path.join(ROOT, 'dataset', 'extra')  # 직접 찍은 사진: extra/<종류>/*.jpg (예: extra/volume/)
 OUT = os.path.join(ROOT, 'dataset', 'holds')
 SIZE = 224  # Teachable Machine 입력 크기
 PAD = 0.15  # 상자 바깥으로 15% 여유(홀드 가장자리가 잘리지 않게)
 MIN_PX = 24  # 이보다 작은 상자는 너무 흐려서 버림
 TEST_RATIO = 0.15
-KEEP = {'jug', 'crimp', 'sloper', 'pinch', 'pocket'}  # 'foot'(발 홀드)은 모양 종류가 아니라 제외
+KEEP = {'jug', 'crimp', 'sloper', 'pinch', 'pocket', 'volume'}  # 'foot'(발 홀드)은 모양 종류가 아니라 제외
 
 
 def read_names(path):
@@ -92,6 +95,19 @@ def main():
                 crop = im.crop((round(x0), round(y0), round(x0 + side), round(y0 + side))).resize((SIZE, SIZE), Image.LANCZOS)
                 crops[cls].append((f'{split}_{stem}_{k}.jpg', crop))
 
+    # 직접 찍은 사진(extra/<종류>/): 가운데를 정사각형으로 잘라 같은 크기로
+    if os.path.isdir(EXTRA):
+        for cls in sorted(os.listdir(EXTRA)):
+            d = os.path.join(EXTRA, cls)
+            if not os.path.isdir(d):
+                continue
+            for fn in sorted(os.listdir(d)):
+                if not fn.lower().endswith(('.jpg', '.jpeg', '.png', '.webp')):
+                    continue
+                im = ImageOps.exif_transpose(Image.open(os.path.join(d, fn))).convert('RGB')
+                im = ImageOps.fit(im, (SIZE, SIZE), Image.LANCZOS)
+                crops.setdefault(cls, []).append((f'extra_{os.path.splitext(fn)[0]}.jpg', im))
+
     if os.path.isdir(OUT):
         shutil.rmtree(OUT)
     random.seed(42)
@@ -114,6 +130,7 @@ def main():
         f.write('https://universe.roboflow.com/capstone-kz2o9/hold-classification\n')
         f.write('License: CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)\n')
         f.write('변경 사항: 상자 영역을 정사각형으로 잘라 224x224로 크기 조정, 종류별 폴더로 분류, 학습/테스트로 나눔\n')
+        f.write('파일 이름이 extra_ 로 시작하는 사진은 직접 찍은 사진입니다(위 라이선스와 무관).\n')
 
     print('\n종류별 사진 수 (학습 / 테스트):')
     for cls, (tr, te) in sorted(total.items(), key=lambda x: -sum(x[1])):
