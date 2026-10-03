@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>홀드 인식 테스트 뷰어</title>
+    <style>
+      body { margin: 0; background: #12151c; color: #f1f3f7; font-family: system-ui, 'Noto Sans KR', sans-serif; }
+      header { position: sticky; top: 0; z-index: 5; background: #1c212c; padding: 10px 16px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; border-bottom: 1px solid #2d3444; }
+      h1 { font-size: 16px; margin: 0; }
+      button { border: 0; border-radius: 10px; padding: 10px 14px; font-size: 14px; font-weight: 600; background: #ffd400; color: #111; cursor: pointer; }
+      button.sub { background: #2a3140; color: #f1f3f7; }
+      .hint { color: #9aa3b5; font-size: 13px; }
+      main { padding: 12px 16px 40px; }
+      #report { background: #1c212c; border-radius: 12px; padding: 12px; margin-bottom: 14px; overflow-x: auto; display: none; }
+      table { border-collapse: collapse; font-size: 13px; width: 100%; }
+      th, td { text-align: left; padding: 5px 10px; border-bottom: 1px solid #2d3444; white-space: nowrap; }
+      td.bad { color: #ff7a5c; font-weight: 700; }
+      td.good { color: #5adf8a; }
+      .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; }
+      .card { background: #1c212c; border-radius: 12px; padding: 10px; }
+      .card h2 { font-size: 13px; margin: 0 0 6px; word-break: break-all; }
+      .card canvas { width: 100%; height: auto; border-radius: 8px; cursor: crosshair; display: block; }
+      .stat { font-size: 12px; color: #9aa3b5; margin-top: 6px; min-height: 32px; }
+      .sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -2px; margin-right: 4px; border: 1px solid #fff5; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>홀드 인식 테스트 뷰어</h1>
+      <button id="evalBtn">합성 이미지 전체 평가</button>
+      <button id="clearBtn" class="sub">표시 지우기</button>
+      <span class="hint">이미지의 홀드를 누르면 그 색으로 인식해요 · 초록=홀드, 하늘색 점선=볼륨, 파란 점=정답(합성 이미지)</span>
+    </header>
+    <main>
+      <div id="report"></div>
+      <div id="grid" class="grid"></div>
+    </main>
+    <script type="module" src="/src/testpage.js"></script>
+  </body>
+</html>
