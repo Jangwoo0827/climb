@@ -180,7 +180,9 @@ export function figureAt(route, holds, body, heightM, stepIndex, phase = 'land')
             if (Math.abs(p.x - hip.x) > 1.2 * (hip.y - p.y)) return // 다리를 옆으로 눕히지 않음
           }
           const dd = Math.min(dist(p, idealL), dist(p, idealR))
-          cands.push({ p, c: (dd / SNAP) ** 2 * 0.5 - (h.type === 'volume' ? 0.2 : 0), id: h.id })
+          // 직전 단계에 딛던 홀드는 계속 딛는 쪽이 유리: 한 발은 남기고 다른 발만 옮겨 올라감
+          const kept = opts?.prevFeet?.includes(h.id) ? 1.5 : 0
+          cands.push({ p, c: (dd / SNAP) ** 2 * 0.5 - (h.type === 'volume' ? 0.2 : 0) - kept, id: h.id })
         })
         // 두 발을 짝으로 고름: 서로 겹치지 않고, 무게중심(엉덩이)이 두 발 사이에 오는 조합
         let f1 = null
@@ -195,7 +197,8 @@ export function figureAt(route, holds, body, heightM, stepIndex, phase = 'land')
             if (!footMatch && dist(a.p, b.p) < 0.16 * heightM) continue
             const lo = Math.min(a.p.x, b.p.x)
             const hi = Math.max(a.p.x, b.p.x)
-            let c = a.c + b.c + (footMatch ? 2 : 0) // 합발은 두 발을 벌린 삼각형보다 조금 덜 안정적
+            let c = a.c + b.c + (footMatch ? 8 : 0) // 합발은 다른 홀드 두 개를 딛을 수 없을 때만
+            if (!footMatch && (hx < lo - 0.04 || hx > hi + 0.04)) continue // 무게중심이 두 발 밖인 조합은 쓰지 않음
             if (!footMatch && hx < lo - 0.03 || (!footMatch && hx > hi + 0.03)) c += 4 + (Math.min(Math.abs(hx - lo), Math.abs(hx - hi)) / torso) * 8
             if (hi - lo > 0.58 * heightM) continue // 다리를 찢는 조합은 쓰지 않음
             if (c < footCost) {
@@ -269,7 +272,7 @@ export function figureAt(route, holds, body, heightM, stepIndex, phase = 'land')
     if (st.dyno) L = R = st.to
     else if (st.hand === 'L') L = st.to
     else R = st.to
-    s = solve(L, R, s.hip, optsFor(i))
+    s = solve(L, R, s.hip, { ...optsFor(i), prevFeet: [s.f1?.id, s.f2?.id].filter((v) => v !== null && v !== undefined) })
   }
   const st = stepIndex >= 0 ? route.steps[stepIndex] : null
   const move = st?.move ?? null

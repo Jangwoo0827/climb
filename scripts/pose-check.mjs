@@ -27,6 +27,7 @@ let bentArms = 0
 let footMatch = 0
 let hipHigh = 0
 let handGap = 0
+let twoHolds = 0
 let bad = 0
 for (const [name, sc] of Object.entries(scenes).filter(([n]) => !process.env.SCENE || n === process.env.SCENE))
   for (const W of [3.5, 5])
@@ -69,6 +70,7 @@ for (const [name, sc] of Object.entries(scenes).filter(([n]) => !process.env.SCE
               const onHold = fig.feetInfo.filter((f) => f.id !== null).length
               if (onHold === 0) smearBoth++
               if (fm) footMatch++
+              if (onHold === 2 && !fm) twoHolds++
               if (Math.abs(p.hl.y - p.hr.y) > 0.6) handGap++
               if (fig.move !== 'mantle' && p.hip.y > Math.max(p.hl.y, p.hr.y) - 0.92 * arm - 0.3 * H + 0.25) hipHigh++
               if (onHold === 1) oneFoot++
@@ -85,5 +87,5 @@ for (const [name, sc] of Object.entries(scenes).filter(([n]) => !process.env.SCE
           }
       }
 if (process.env.SCENE) console.log('scene', process.env.SCENE)
-console.log('자세', total, '문제', bad, '· 발이 홀드에 0개', smearBoth, '· 1개', oneFoot, '· 손 이동', steps, '중 크게 뻗는 이동', longMoves, '· 팔 굽혀 매달림', bentArms, '· 발 매칭', footMatch, '· 엉덩이 높음', hipHigh, '· 두 손 높이차 60cm↑', handGap)
+console.log('자세', total, '문제', bad, '· 발이 홀드에 0개', smearBoth, '· 1개', oneFoot, '· 손 이동', steps, '중 크게 뻗는 이동', longMoves, '· 팔 굽혀 매달림', bentArms, '· 합발', footMatch, '· 엉덩이 높음', hipHigh, '· 두 손 높이차 60cm↑', handGap, '· 다른 홀드 두 개', twoHolds)
 process.exitCode = bad ? 1 : 0
