@@ -103,3 +103,5 @@ main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .modes button.on { background: var(--accent); color: #111; }
 .modes button.on.start { background: #3ddc84; }
 .modes button.on.finish { background: #ff4d8d; color: #fff; }
+
+.ver { font-size: 10px; font-weight: 400; color: #6f778a; margin-left: 4px; }

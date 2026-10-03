@@ -330,7 +330,7 @@ export default function App() {
   return (
     <div className="app">
       <header className="top">
-        <h1>🧗 클라이밍 도우미</h1>
+        <h1>🧗 클라이밍 도우미 <small className="ver">{__APP_VERSION__}</small></h1>
         {photo && tab === 'course' && (
           <div className="actions">
             {target && <button className="icon" onClick={resetPick} aria-label="홀드 색 다시 고르기">🎨</button>}
