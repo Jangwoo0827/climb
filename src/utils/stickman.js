@@ -17,7 +17,7 @@ function distSeg(p, a, b) {
 
 // 두 마디(길이 l1, l2)로 a에서 b까지 이어지는 관절 위치 후보 2개 중 하나를 고른다.
 // avoid가 있으면 그 선분(몸통)에서 더 먼 쪽을 고르고, 비슷하면 side(-1 왼쪽, +1 오른쪽) 쪽을 고른다.
-function joint(a, b, l1, l2, side, avoid) {
+function joint(a, b, l1, l2, side, avoid, down = 0.8) {
   const full = dist(a, b) || 1e-6
   const d = Math.min(full, l1 + l2 - 1e-6)
   const ux = (b.x - a.x) / full
@@ -27,7 +27,10 @@ function joint(a, b, l1, l2, side, avoid) {
   const base = { x: a.x + ux * along, y: a.y + uy * along }
   const c1 = { x: base.x - uy * h, y: base.y + ux * h }
   const c2 = { x: base.x + uy * h, y: base.y - ux * h }
-  const score = (c) => (avoid ? distSeg(c, avoid[0], avoid[1]) : 0) + ((c.x - base.x) * side > 0 ? 0.03 : 0) - (c.y < 0 ? 5 : 0) // 관절이 바닥 아래로 가지 않게
+  // 몸통에서 멀고, 아래로 처지는 쪽(사람 팔꿈치·무릎은 위로 꺾이지 않음)을 고름
+  const score = (c) =>
+    (avoid ? Math.min(0.15, distSeg(c, avoid[0], avoid[1])) - (distSeg(c, avoid[0], avoid[1]) < 0.035 ? 1 : 0) : 0) + ((c.x - base.x) * side > 0 ? 0.03 : 0) + (base.y - c.y) * down - (down < 0.5 && (c.y < Math.min(a.y, b.y) - 0.03 || c.y > a.y + 0.01) ? 1 : 0) - // 무릎은 발보다 아래, 엉덩이보다 위로 가지 않음
+     (c.y < 0 ? 5 : 0)
   return score(c1) >= score(c2) ? c1 : c2
 }
 
@@ -100,8 +103,8 @@ export function figureAt(route, holds, body, heightM, stepIndex, phase = 'land')
         elL: joint(shL, hl, arm / 2, arm / 2, -1, torsoSeg),
         elR: joint(shR, hr, arm / 2, arm / 2, 1, torsoSeg),
         hl, hr, hip, hipL, hipR,
-        kneeL: joint(hipL, footL, leg / 2, leg / 2, -1),
-        kneeR: joint(hipR, footR, leg / 2, leg / 2, 1),
+        kneeL: joint(hipL, footL, leg / 2, leg / 2, -1, null, 0.05),
+        kneeR: joint(hipR, footR, leg / 2, leg / 2, 1, null, 0.05),
         footL, footR,
         neck: { x: S.x, y: S.y },
       },
@@ -117,12 +120,13 @@ export function figureAt(route, holds, body, heightM, stepIndex, phase = 'land')
   }
 
   // 한 단계의 자세를 푼다. prev: 직전 단계의 엉덩이 위치(자세가 갑자기 튀지 않게 함), opts: {move, movingPt}
-  const solve = (L, R, prev, opts) => {
+  const solve = (L, R, prev, opts, relax = 0) => {
+    const near = relax ? 0.3 : 0.5 // 발이 엉덩이에 이보다 가까우면(다리 길이 비율) 무릎이 접혀 부자연스러움
     // 팔이 몸을 가로지르지 않도록 손은 x 순서대로 왼손/오른손으로 배정
     const pts = [holds[L], holds[R]].map((h) => ({ x: h.mx, y: h.my })).sort((a, b) => a.x - b.x)
     const [hl, hr] = pts
     const mid = { x: (hl.x + hr.x) / 2, y: (hl.y + hr.y) / 2 }
-    const minHipY = 0.28 * leg // 바닥에 웅크린 정도가 한계
+    const minHipY = FOOT_CLEAR + (relax ? 0.25 : 0.45) * leg // 발(바닥에서 띄움)보다 엉덩이가 충분히 높아야 무릎이 엉덩이 위로 접히지 않음
     const handTop = Math.min(hl.y, hr.y) - HAND_MARGIN // 손이 허리보다 위에 있도록 엉덩이의 최대 높이
     let loY = Math.max(minHipY, mid.y - arm - torso)
     let hiY = Math.min(Math.max(loY, mid.y - torso + 0.3), handTop)
@@ -140,18 +144,18 @@ export function figureAt(route, holds, body, heightM, stepIndex, phase = 'land')
           const p = { x: h.mx, y: h.my }
           const d = dist(p, hip)
           if (p.y < FOOT_CLEAR) return // 바닥에 닿는 낮은 홀드는 제외
-          if (d > 0.95 * leg || p.y > hip.y - 0.1 * leg) return // 너무 멀거나 엉덩이보다 높은 홀드
+          if (d > 0.95 * leg || d < near * leg || p.y > hip.y - 0.3 * leg) return // 너무 멀거나, 너무 가깝거나(무릎이 접힘), 엉덩이 근처보다 높은 홀드
           // 볼륨은 발판이 넓어 안정적이라 조금 유리하게 침
           feet.push({ p, c: ((d - 0.72 * leg) / leg) ** 2 * 4 + (p.y > hip.y - 0.25 * leg ? 0.3 : 0) - (h.type === 'volume' ? 0.25 : 0), id: h.id })
         })
         for (const s of [-1, 1]) {
           // 낮은 자리에서는 바닥에서 띄운 높이(FOOT_CLEAR)의 벽면에 발을 붙임
           const p = { x: hx + s * 0.12 * heightM, y: Math.max(FOOT_CLEAR, hy - 0.7 * leg) }
-          if (dist(p, hip) <= 0.98 * leg) feet.push({ p, c: 0.5, id: null })
+          if (dist(p, hip) <= 0.98 * leg && dist(p, hip) >= near * leg) feet.push({ p, c: 0.5, id: null })
         }
         feet.sort((a, b) => a.c - b.c)
         const f1 = feet[0]
-        const f2 = feet.find((f) => f !== f1 && Math.abs(f.p.x - f1.p.x) > 0.02 * heightM)
+        const f2 = feet.find((f) => f !== f1 && dist(f.p, f1.p) > 0.16 * heightM) // 두 발은 한 점에 모이지 않고 골반 너비 이상 벌림
         if (!f1 || !f2) continue
         const footCost = f1.c + f2.c
         const fx = (f1.p.x + f2.p.x) / 2
@@ -163,15 +167,16 @@ export function figureAt(route, holds, body, heightM, stepIndex, phase = 'land')
 
           // 팔: 동작에 맞는 만큼 펴는 게 좋고, 완전히 뻗는 건 감점. 손이 반대편 어깨 너머면 감점
           for (const [dx, h, wrong] of [
-            [-sw / 2, hl, (h0) => h0.x > S.x + 0.05],
-            [sw / 2, hr, (h0) => h0.x < S.x - 0.05],
+            [-sw / 2, hl, (h0) => h0.x > S.x - sw * 0.2],
+            [sw / 2, hr, (h0) => h0.x < S.x + sw * 0.2],
           ]) {
             const isMoving = !!opts?.movingPt && Math.abs(h.x - opts.movingPt.x) < 1e-6 && Math.abs(h.y - opts.movingPt.y) < 1e-6
             const target = armTarget(opts?.move, isMoving)
             const d = dist({ x: S.x + dx, y: S.y }, h)
             if (d > 0.97 * arm) cost += 40 * ((d - 0.97 * arm) / arm + 0.05)
             else cost += ((d - target * arm) / arm) ** 2 * 3
-            if (wrong(h)) cost += 2
+            if (wrong(h)) cost += 4 // 손이 가슴 앞이나 반대편이면 팔이 몸에 걸림
+            if (h.y < S.y) cost += ((S.y - h.y) / arm) ** 2 * 6 // 손이 어깨 아래면 몸을 낮춰 손을 어깨 높이 근처로
           }
 
           cost += ((hx - fx) / torso) ** 2 * 1.2 // 체중이 발 위에 실리도록
@@ -182,6 +187,11 @@ export function figureAt(route, holds, body, heightM, stepIndex, phase = 'land')
           if (!best || cost < best.cost) best = { cost, hip, S, f1, f2 }
         }
       }
+    }
+    // 손이 아주 낮거나 팔이 닿지 않는 자세밖에 없으면 조건을 완화해 다시 찾음
+    if ((!best || best.cost >= 40) && relax < 1) {
+      const alt = solve(L, R, prev, opts, relax + 1)
+      if (!best || (alt.cost ?? Infinity) < best.cost) return alt
     }
     return { hl, hr, ...best }
   }
@@ -216,9 +226,11 @@ export function figureAt(route, holds, body, heightM, stepIndex, phase = 'land')
   if (move === 'flag') {
     const support = feet.find((f) => f.id !== null) ?? feet[0]
     const other = feet.find((f) => f !== support)
-    other.p = { x: hip.x - dir * 0.62 * leg, y: Math.max(FOOT_CLEAR, hip.y - 0.62 * leg) }
+    other.p = { x: hip.x - dir * 0.55 * leg, y: Math.max(FOOT_CLEAR, hip.y - 0.72 * leg) } // 뻗은 다리는 거의 곧게
     other.id = null
     other.flag = true
+    // 뻗은 다리가 딛는 발과 겹치지 않게
+    if (dist(other.p, support.p) < 0.16 * heightM) other.p = { x: support.p.x - dir * 0.2 * heightM, y: Math.max(FOOT_CLEAR, support.p.y + 0.05) }
   }
 
   feet.sort((a, b) => a.p.x - b.p.x)
@@ -254,8 +266,8 @@ export function figureAt(route, holds, body, heightM, stepIndex, phase = 'land')
       hip,
       hipL,
       hipR,
-      kneeL: joint(hipL, footL.p, leg / 2, leg / 2, dropSide === 'L' ? 1 : -1),
-      kneeR: joint(hipR, footR.p, leg / 2, leg / 2, dropSide === 'R' ? -1 : 1),
+      kneeL: joint(hipL, footL.p, leg / 2, leg / 2, dropSide === 'L' ? 1 : -1, null, 0.05),
+      kneeR: joint(hipR, footR.p, leg / 2, leg / 2, dropSide === 'R' ? -1 : 1, null, 0.05),
       footL: footL.p,
       footR: footR.p,
       // 어깨선의 중심에서 엉덩이로 이어지는 몸통 (그리기용)

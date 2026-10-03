@@ -16,7 +16,9 @@ export function bodyModel({ height, apeIndex, flexibility, level }) {
   const span = (height / 100) * apeIndex
   // 입력값은 제한이 없어도 계산이 무너지지 않도록 보정값만 0.5~2배로 제한
   const flexBonus = Math.min(2, Math.max(0.5, 1 + (flexibility - 3) * 0.035))
-  const maxReach = span * L.reachRatio * flexBonus // 한 손을 옮길 때 다른 손과의 최대 거리
+  const physical = span // 두 손 사이 물리적 최대 = 양팔 + 어깨너비 = 팔 벌린 길이
+  // 한 손을 옮길 때 다른 손과의 최대 거리. 유연성이 높아도 몸의 한계(92%)를 넘지 않음
+  const maxReach = Math.min(span * L.reachRatio * flexBonus, physical * 0.92)
   const Hm = height / 100
   const arm = Math.max(0.3, (span - 0.23 * Hm) / 2)
   return {
