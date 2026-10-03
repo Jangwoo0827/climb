@@ -46,6 +46,9 @@ for (const [name, sc] of Object.entries(scenes))
             for (const k of ['footL', 'footR']) if (p[k].y < 0.0999) issues.push(k + ' 바닥에 닿음')
             if (phase === 'land') {
               for (const h of [p.hl, p.hr]) if (h.y < p.hip.y - 1e-6 && h.y > 0.12) issues.push('손이 허리 아래')
+              for (const [k, f] of [['footL', p.footL], ['footR', p.footR]]) if (Math.abs(f.x - p.hip.x) > 1.2 * (p.hip.y - f.y) + 0.05 && fig.feetInfo.some((x) => x.id !== null)) issues.push(k + ' 옆으로 눕힘')
+              // 팔꿈치가 어깨-손 선보다 위로 꺾이면 치킨 윙
+              for (const [k, sh, h] of [['elL', p.shL, p.hl], ['elR', p.shR, p.hr]]) { const t = (p[k].x - sh.x) / ((h.x - sh.x) || 1e-6); const lineY = Math.abs(h.x - sh.x) > 0.02 ? sh.y + (h.y - sh.y) * t : -Infinity; if (p[k].y > lineY + 0.02 && Math.abs(h.x - sh.x) > 0.02) issues.push(k + ' 선 위로 꺾임') }
               const fm = fig.feetInfo.every((f) => f.kind === 'footmatch')
               if (!fm && Math.hypot(p.footL.x - p.footR.x, p.footL.y - p.footR.y) < 0.16 * H - 1e-6) issues.push('두 발이 한 점')
               for (const [k, sh, h] of [['elL', p.shL, p.hl], ['elR', p.shR, p.hr]]) if (p[k].y > Math.max(sh.y, h.y) + 0.02) issues.push(k + ' 위로 꺾임')

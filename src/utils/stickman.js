@@ -17,6 +17,19 @@ function distSeg(p, a, b) {
 
 // 두 마디(길이 l1, l2)로 a에서 b까지 이어지는 관절 위치 후보 2개 중 하나를 고른다.
 // avoid가 있으면 그 선분(몸통)에서 더 먼 쪽을 고르고, 비슷하면 side(-1 왼쪽, +1 오른쪽) 쪽을 고른다.
+// 팔꿈치: 어깨-손을 잇는 선의 아래쪽으로만 꺾음(위로 드는 치킨 윙 금지). 몸통에 닿는 자세는 몸 위치 쪽에서 감점해 피함
+function elbow(sh, hand, l) {
+  const c = joint(sh, hand, l, l, 1, null, 0)
+  const full = dist(sh, hand) || 1e-6
+  const d = Math.min(full, 2 * l - 1e-6)
+  const ux = (hand.x - sh.x) / full
+  const uy = (hand.y - sh.y) / full
+  const along = d / 2
+  const base = { x: sh.x + ux * along, y: sh.y + uy * along }
+  const mirror = { x: 2 * base.x - c.x, y: 2 * base.y - c.y }
+  return c.y <= mirror.y ? c : mirror
+}
+
 function joint(a, b, l1, l2, side, avoid, down = 0.8) {
   const full = dist(a, b) || 1e-6
   const d = Math.min(full, l1 + l2 - 1e-6)
@@ -100,8 +113,8 @@ export function figureAt(route, holds, body, heightM, stepIndex, phase = 'land')
       p: {
         head: { x: S.x, y: S.y + 0.13 * heightM },
         shL, shR,
-        elL: joint(shL, hl, arm / 2, arm / 2, -1, torsoSeg),
-        elR: joint(shR, hr, arm / 2, arm / 2, 1, torsoSeg),
+        elL: elbow(shL, hl, arm / 2),
+        elR: elbow(shR, hr, arm / 2),
         hl, hr, hip, hipL, hipR,
         kneeL: joint(hipL, footL, leg / 2, leg / 2, -1, null, 0.05),
         kneeR: joint(hipR, footR, leg / 2, leg / 2, 1, null, 0.05),
@@ -145,13 +158,15 @@ export function figureAt(route, holds, body, heightM, stepIndex, phase = 'land')
           const p = { x: h.mx, y: h.my }
           const d = dist(p, hip)
           if (p.y < FOOT_CLEAR) return // 바닥에 닿는 낮은 홀드는 제외
+          if (Math.abs(p.x - hip.x) > 1.2 * (hip.y - p.y)) return // 발은 엉덩이 아래쪽(수직에서 약 50도 안)에만: 다리를 옆으로 눕히지 않음
           if (d > 0.95 * leg || d < near * leg || p.y > hip.y - 0.3 * leg) return // 너무 멀거나, 너무 가깝거나(무릎이 접힘), 엉덩이 근처보다 높은 홀드
           // 볼륨은 발판이 넓어 안정적이라 조금 유리하게 침
           feet.push({ p, c: -0.6 + ((d - 0.72 * leg) / leg) ** 2 * 4 + (p.y > hip.y - 0.25 * leg ? 0.3 : 0) - (h.type === 'volume' ? 0.25 : 0), id: h.id })
         })
         for (const s of [-1, 1]) {
           // 낮은 자리에서는 바닥에서 띄운 높이(FOOT_CLEAR)의 벽면에 발을 붙임
-          const p = { x: hx + s * 0.17 * heightM, y: Math.max(FOOT_CLEAR, hy - 0.78 * leg) }
+          const fy = Math.max(FOOT_CLEAR, hy - 0.78 * leg)
+          const p = { x: hx + s * Math.min(0.17 * heightM, 1.1 * (hy - fy)), y: fy } // 벽에 붙이는 발도 엉덩이 아래쪽에
           if (dist(p, hip) <= 0.98 * leg && dist(p, hip) >= near * leg) feet.push({ p, c: 8, id: null }) // 벽면 스미어는 발 닿는 홀드가 하나도 없을 때만
         }
         // 삼각형 기본자세: 두 발을 넓게 벌려 밑변을 만들고 엉덩이(무게중심)가 그 밑변 위에 오게 하는 발 조합을 고름
@@ -199,14 +214,13 @@ export function figureAt(route, holds, body, heightM, stepIndex, phase = 'land')
             const isMoving = !!opts?.movingPt && Math.abs(h.x - opts.movingPt.x) < 1e-6 && Math.abs(h.y - opts.movingPt.y) < 1e-6
             const target = armTarget(opts?.move, isMoving)
             const d = dist({ x: S.x + dx, y: S.y }, h)
-            if (d > 0.97 * arm) cost += 40 * ((d - 0.97 * arm) / arm + 0.05)
+            if (d > 0.97 * arm) cost += 200 * ((d - 0.97 * arm) / arm + 0.05) // 팔이 닿지 않는 자세는 사실상 금지
             else cost += ((d - target * arm) / arm) ** 2 * 22 // 팔을 곧게 펴고 엉덩이를 내려 뼈로 매달림(팔 힘을 아낌)
             if (wrong(h)) cost += 4 // 손이 가슴 앞이나 반대편이면 팔이 몸에 걸림
             // 실제 팔꿈치 위치를 계산해 위로 꺾이거나(치킨 윙) 몸통에 닿으면 감점
             const sh = { x: S.x + dx, y: S.y }
-            const el = joint(sh, h, arm / 2, arm / 2, dx < 0 ? -1 : 1, [S, hip])
-            if (el.y > Math.max(sh.y, h.y) + 0.02) cost += 3
-            if (distSeg(el, S, hip) < 0.04) cost += 3
+            const el = elbow(sh, h, arm / 2)
+            if (distSeg(el, S, hip) < 0.05) cost += 10 // 팔꿈치가 몸통에 닿으면 이 몸 위치는 쓰지 않음
             if (h.y < S.y) cost += ((S.y - h.y) / arm) ** 2 * 6 // 손이 어깨 아래면 몸을 낮춰 손을 어깨 높이 근처로
           }
 
@@ -222,7 +236,7 @@ export function figureAt(route, holds, body, heightM, stepIndex, phase = 'land')
       }
     }
     // 손이 아주 낮거나 팔이 닿지 않는 자세밖에 없으면 조건을 완화해 다시 찾음
-    if ((!best || best.cost >= 40) && relax < 1) {
+    if ((!best || best.cost >= 200) && relax < 1) {
       const alt = solve(L, R, prev, opts, relax + 1)
       if (!best || (alt.cost ?? Infinity) < best.cost) return alt
     }
@@ -298,8 +312,8 @@ export function figureAt(route, holds, body, heightM, stepIndex, phase = 'land')
       head: { x: S.x, y: S.y + 0.13 * heightM },
       shL,
       shR,
-      elL: joint(shL, hl, arm / 2, arm / 2, -1, torsoSeg),
-      elR: joint(shR, hr, arm / 2, arm / 2, 1, torsoSeg),
+      elL: elbow(shL, hl, arm / 2),
+      elR: elbow(shR, hr, arm / 2),
       hl,
       hr,
       hip,
