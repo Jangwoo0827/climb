@@ -143,6 +143,10 @@ export function findRoute(holds, body, startIds, finishIds) {
           cost = 0.6 + (travel / body.comfort) ** 2 * 1.2
           cost += (Math.max(0, d - body.comfort * 0.8) / body.comfort) ** 2 * 12 // 두 손 사이가 벌어질수록 크게 감점
           if (match) cost += 0.4 // 매칭은 한 동작을 더 쓰는 만큼 약간의 비용
+          // 아래에 있는 손을 올리는 동작을 우선: 두 손 높이를 비슷하게 유지해 몸이 늘어지지 않게 함
+          if (holds[cur].my < holds[fixed].my - 0.05) cost -= 0.5
+          const gap = Math.abs(holds[t].my - holds[fixed].my)
+          cost += Math.max(0, gap - 0.35) * 6 // 이동 뒤 두 손 높이 차가 35cm를 넘으면 감점
           if (dy < 0) cost += -dy * body.level.downPenalty // 내려가는 동작 억제
           if (dy > 0) cost -= Math.min(dy, 0.5) * 0.6 // 위로 가는 진행은 약간 보상
           if (cross > 0.25) cost += 2
