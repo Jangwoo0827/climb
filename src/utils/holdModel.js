@@ -12,7 +12,8 @@ export function loadHoldModel() {
       try {
         const meta = await (await fetch(`${BASE}metadata.json`)).json()
         const model = await tf.loadLayersModel(`${BASE}model.json`)
-        return { model, labels: meta.labels, size: meta.imageSize ?? 224 }
+        // crop: 학습 사진을 자른 방식. 'tight' = 홀드 상자만 잘라 회색 바탕, 그 외(예전 모델) = 상자를 정사각형으로 넓혀 30% 여유
+        return { model, labels: meta.labels, size: meta.imageSize ?? 224, crop: meta.crop ?? 'loose' }
       } catch {
         return null
       }
@@ -68,14 +69,39 @@ export async function classifyHolds(img, holds) {
   const W = img.naturalWidth
   const H = img.naturalHeight
   const canvases = holds.map((h) => {
-    // 홀드 면적으로 크기를 어림하고 15%씩 여유를 둔 정사각형(학습 데이터와 같은 방식)
-    const side = Math.max(24, Math.sqrt(h.size * W * H) * 1.3 * 1.3)
+    // 학습 데이터와 같게: 홀드 상자(여유 5%)만 잘라 비율을 유지한 채 회색 바탕 가운데에 놓음(옆 홀드가 섞이지 않게)
+    if (m.crop !== 'tight') {
+      // 예전 방식(넓게 자름)으로 학습한 모델: 정사각형으로 넓혀 자름
+      const side = Math.max(24, Math.sqrt(h.size * W * H) * 1.3 * 1.3)
+      const c = document.createElement('canvas')
+      c.width = c.height = m.size
+      const g = c.getContext('2d')
+      g.fillStyle = '#808080'
+      g.fillRect(0, 0, m.size, m.size)
+      g.drawImage(img, h.x * W - side / 2, h.y * H - side / 2, side, side, 0, 0, m.size, m.size)
+      return c
+    }
+    let bw
+    let bh
+    let cx = h.x * W
+    let cy = h.y * H
+    if (h.box) {
+      bw = (h.box.x1 - h.box.x0) * W
+      bh = (h.box.y1 - h.box.y0) * H
+      cx = ((h.box.x0 + h.box.x1) / 2) * W
+      cy = ((h.box.y0 + h.box.y1) / 2) * H
+    } else {
+      bw = bh = Math.sqrt(h.size * W * H) * 1.15 // 상자가 없으면(직접 추가한 홀드 등) 면적으로 어림
+    }
+    bw = Math.max(12, bw * 1.1)
+    bh = Math.max(12, bh * 1.1)
+    const k = m.size / Math.max(bw, bh)
     const c = document.createElement('canvas')
     c.width = c.height = m.size
     const g = c.getContext('2d')
     g.fillStyle = '#808080'
     g.fillRect(0, 0, m.size, m.size)
-    g.drawImage(img, h.x * W - side / 2, h.y * H - side / 2, side, side, 0, 0, m.size, m.size)
+    g.drawImage(img, cx - bw / 2, cy - bh / 2, bw, bh, (m.size - bw * k) / 2, (m.size - bh * k) / 2, bw * k, bh * k)
     return c
   })
   return predict(m, canvases)

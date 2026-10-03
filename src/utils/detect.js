@@ -354,6 +354,7 @@ export function detectHolds(img, target) {
     const inset = (px, py) => ({ x: (mx + (px - mx) * 0.88) / w, y: (my + (py - my) * 0.88) / h })
     return {
       x: mx / w,
+      box: { x0: b.x0 / w, y0: b.y0 / h, x1: (b.x1 + 1) / w, y1: (b.y1 + 1) / h }, // 홀드를 감싸는 상자(AI 판별용으로 자를 때 씀)
       y: my / h,
       size: b.area / (w * h),
       elong: b.area < 30 ? 1 : Math.sqrt(l1 / l2),

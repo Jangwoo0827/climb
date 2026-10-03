@@ -30,11 +30,22 @@ RAW = os.path.join(ROOT, 'dataset', 'raw')
 EXTRA = os.path.join(ROOT, 'dataset', 'extra')  # 직접 찍은 사진: extra/<종류>/*.jpg (예: extra/volume/)
 OUT = os.path.join(ROOT, 'dataset', 'holds')
 SIZE = 224  # Teachable Machine 입력 크기
-PAD = 0.15  # 상자 바깥으로 15% 여유(홀드 가장자리가 잘리지 않게)
+PAD = 0.05  # 상자 바깥 여유 5%: 옆 홀드가 섞이지 않게 상자 그대로 자르고 빈 곳은 회색으로 채움
+GRAY = (128, 128, 128)
 MIN_PX = 24  # 이보다 작은 상자는 너무 흐려서 버림
 TEST_RATIO = 0.15
 MAX_TRAIN = int(sys.argv[sys.argv.index('--max-train') + 1]) if '--max-train' in sys.argv else 0  # 종류별 학습 사진 상한(0이면 제한 없음)
 KEEP = {'jug', 'crimp', 'sloper', 'pinch', 'pocket', 'volume'}  # 'foot'(발 홀드)은 모양 종류가 아니라 제외
+
+
+def letterbox(box):
+    """상자 비율을 유지한 채 SIZE x SIZE 회색 바탕 가운데에 놓음(정사각형으로 넓혀 옆 홀드가 들어오지 않게)"""
+    w, h = box.size
+    k = SIZE / max(w, h)
+    small = box.resize((max(1, round(w * k)), max(1, round(h * k))), Image.LANCZOS)
+    out = Image.new('RGB', (SIZE, SIZE), GRAY)
+    out.paste(small, ((SIZE - small.width) // 2, (SIZE - small.height) // 2))
+    return out
 
 
 def wall_patches(n, rand):
@@ -83,7 +94,9 @@ def swap_bg(im, bg):
         stack += [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)]
     from PIL import ImageFilter
     mask = mask.filter(ImageFilter.GaussianBlur(1.2))
-    return Image.composite(bg, im, mask), len(seen) / (w * h)
+    obj = Image.new('L', (w, h), 255)
+    obj.paste(0, mask=mask.point(lambda v: 255 if v > 127 else 0))
+    return Image.composite(bg, im, mask), len(seen) / (w * h), obj.getbbox()
 
 
 def read_names(path):
@@ -140,11 +153,11 @@ def main():
                     xs, ys = vals[0::2], vals[1::2]
                     cx, cy = (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2
                     bw, bh = max(xs) - min(xs), max(ys) - min(ys)
-                side = max(bw * W, bh * H) * (1 + 2 * PAD)  # 정사각형으로 잘라 비율이 찌그러지지 않게
-                if side < MIN_PX:
+                pw, ph = bw * W * (1 + 2 * PAD), bh * H * (1 + 2 * PAD)
+                if max(pw, ph) < MIN_PX:
                     continue
-                x0, y0 = cx * W - side / 2, cy * H - side / 2
-                crop = im.crop((round(x0), round(y0), round(x0 + side), round(y0 + side))).resize((SIZE, SIZE), Image.LANCZOS)
+                box = im.crop((round(cx * W - pw / 2), round(cy * H - ph / 2), round(cx * W + pw / 2), round(cy * H + ph / 2)))
+                crop = letterbox(box)
                 crops[cls].append((f'{split}_{stem}_{k}.jpg', crop))
 
     # 직접 찍은 사진(extra/<종류>/): 가운데를 정사각형으로 잘라 같은 크기로
@@ -165,7 +178,12 @@ def main():
                     # 흰 배경 제품 사진: 배경을 벽 사진 조각으로 바꾼 두 장으로(모델이 '흰 배경'을 외우지 않게)
                     made = []
                     for j, bg in enumerate(wall_patches(2, bg_rand)):
-                        out, frac = swap_bg(im, bg)
+                        out, frac, bbox = swap_bg(im, bg)
+                        if bbox:
+                            # 홀드 데이터와 같게: 물체 상자(여유 5%)만 잘라 회색 바탕에 놓음
+                            x0, y0, x1, y1 = bbox
+                            mx, my = (x1 - x0) * PAD, (y1 - y0) * PAD
+                            out = letterbox(out.crop((max(0, x0 - mx), max(0, y0 - my), min(SIZE, x1 + mx), min(SIZE, y1 + my))))
                         made.append((f'extra_{stem}_bg{j}.jpg', out, frac))
                     frac = made[0][2] if made else 0
                     # 배경으로 바뀐 부분이 너무 적거나(배경을 못 찾음) 너무 많으면(물체까지 지움) 원본을 그대로 씀
@@ -203,7 +221,7 @@ def main():
         f.write('"hold classification" by Capstone, Roboflow Universe\n')
         f.write('https://universe.roboflow.com/capstone-kz2o9/hold-classification\n')
         f.write('License: CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)\n')
-        f.write('변경 사항: 상자 영역을 정사각형으로 잘라 224x224로 크기 조정, 종류별 폴더로 분류, 학습/테스트로 나눔\n')
+        f.write('변경 사항: 상자 영역(여유 5%)만 잘라 비율을 유지한 채 224x224 회색 바탕에 놓음, 종류별 폴더로 분류, 학습/테스트로 나눔\n')
         f.write('파일 이름이 extra_ 로 시작하는 사진은 따로 넣은 사진입니다(위 라이선스와 무관). 이름이 _bg0, _bg1 로 끝나면 흰 배경을 위 데이터셋의 벽 사진 조각으로 바꾼 것입니다.\n')
 
     print('\n종류별 사진 수 (학습 / 테스트):')
