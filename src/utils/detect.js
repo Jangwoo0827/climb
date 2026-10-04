@@ -33,7 +33,11 @@ export function sampleImage(source, srcW, srcH) {
   c.height = h
   const ctx = c.getContext('2d', { willReadFrequently: true })
   ctx.drawImage(source, 0, 0, w, h)
-  const data = ctx.getImageData(0, 0, w, h).data
+  return fromRGBA(ctx.getImageData(0, 0, w, h).data, w, h)
+}
+
+// RGBA 픽셀 배열로 Lab 이미지를 만든다(테스트 스크립트에서도 씀)
+export function fromRGBA(data, w, h) {
   const lab = new Float32Array(w * h * 3)
   for (let p = 0; p < w * h; p++) {
     const [L, a, b] = rgbToLab(data[p * 4], data[p * 4 + 1], data[p * 4 + 2])
@@ -325,46 +329,48 @@ function isHold(img, label, b, target, dbg) {
 export function detectHolds(img, target) {
   const { w, h } = img
   let found = []
+  let lab = null
   let scale = 1
   // 너무 많이 잡히면 허용 범위를 좁히고, 하나도 없으면 넓혀 다시 시도
   for (let attempt = 0; attempt < 4; attempt++) {
     const { blobs, label } = findBlobs(img, target, scale)
+    lab = label
     found = blobs.filter((b) => isHold(img, label, b, target))
     if (found.length > 60 && scale > 0.4) scale *= 0.8
     else if (found.length === 0 && scale < 1.7) scale *= 1.3
     else break
   }
-  // 볼륨: 화면의 0.6% 이상이고 보통 홀드 크기(중앙값)의 3배 이상인 큰 덩어리
+  // 볼륨: 보통 홀드(중앙값)보다 크고, 윤곽이 곧은 모서리의 다각형인 덩어리. 크기만 크고 둥근 것은 큰 홀드(매크로)
   const normal = found.filter((b) => b.area <= w * h * 0.02).map((b) => b.area).sort((u, v) => u - v)
   const med = normal.length ? normal[normal.length >> 1] : 0
-  const volumeMin = Math.max(w * h * 0.006, med * 3)
-  return found.map((b) => {
-    // 덩어리의 길쭉함(elong)과 방향(angle, 라디안)을 공분산으로 구함. 홀드 종류 추정에 씀
-    const mx = b.sx / b.area
-    const my = b.sy / b.area
-    const cxx = b.sxx / b.area - mx * mx
-    const cyy = b.syy / b.area - my * my
-    const cxy = b.sxy / b.area - mx * my
-    const tr = cxx + cyy
-    const root = Math.sqrt(Math.max(0, (tr * tr) / 4 - (cxx * cyy - cxy * cxy)))
-    const l1 = tr / 2 + root
-    const l2 = Math.max(1e-6, tr / 2 - root)
-    const volume = b.area >= volumeMin
-    // 중심 쪽으로 12% 들여 잡은 가장자리 접점(위/아래/왼쪽/오른쪽)
-    const inset = (px, py) => ({ x: (mx + (px - mx) * 0.88) / w, y: (my + (py - my) * 0.88) / h })
-    return {
-      x: mx / w,
-      box: { x0: b.x0 / w, y0: b.y0 / h, x1: (b.x1 + 1) / w, y1: (b.y1 + 1) / h }, // 홀드를 감싸는 상자(AI 판별용으로 자를 때 씀)
-      y: my / h,
-      size: b.area / (w * h),
-      elong: b.area < 30 ? 1 : Math.sqrt(l1 / l2),
-      angle: 0.5 * Math.atan2(2 * cxy, cxx - cyy),
-      volume,
-      extent: volume
-        ? { top: inset(b.tx, b.y0), bottom: inset(b.bx, b.y1), left: inset(b.x0, b.ly), right: inset(b.x1, b.ry) }
-        : undefined,
-    }
-  })
+  const volumeMin = Math.max(w * h * 0.004, med * 2.5)
+  return found.map((b) => toHold(b, w, h, b.area >= volumeMin && isPolygonVolume(polygonShape(lab, b, w))))
+}
+
+// 덩어리 → 홀드 정보 {x,y,size,elong,angle,box,volume,extent}
+function toHold(b, w, h, volume) {
+  // 덩어리의 길쭉함(elong)과 방향(angle, 라디안)을 공분산으로 구함. 홀드 종류 추정에 씀
+  const mx = b.sx / b.area
+  const my = b.sy / b.area
+  const cxx = b.sxx / b.area - mx * mx
+  const cyy = b.syy / b.area - my * my
+  const cxy = b.sxy / b.area - mx * my
+  const tr = cxx + cyy
+  const root = Math.sqrt(Math.max(0, (tr * tr) / 4 - (cxx * cyy - cxy * cxy)))
+  const l1 = tr / 2 + root
+  const l2 = Math.max(1e-6, tr / 2 - root)
+  // 중심 쪽으로 12% 들여 잡은 가장자리 접점(위/아래/왼쪽/오른쪽)
+  const inset = (px, py) => ({ x: (mx + (px - mx) * 0.88) / w, y: (my + (py - my) * 0.88) / h })
+  return {
+    x: mx / w,
+    box: { x0: b.x0 / w, y0: b.y0 / h, x1: (b.x1 + 1) / w, y1: (b.y1 + 1) / h }, // 홀드를 감싸는 상자(AI 판별용으로 자를 때 씀)
+    y: my / h,
+    size: b.area / (w * h),
+    elong: b.area < 30 ? 1 : Math.sqrt(l1 / l2),
+    angle: 0.5 * Math.atan2(2 * cxy, cxx - cyy),
+    volume,
+    extent: volume ? { top: inset(b.tx, b.y0), bottom: inset(b.bx, b.y1), left: inset(b.x0, b.ly), right: inset(b.x1, b.ry) } : undefined,
+  }
 }
 
 // 테스트/디버깅용: 내부 함수를 노출함
@@ -401,4 +407,158 @@ export function detectAllHolds(img) {
     .map((b) => ({ x: b.sx / b.area / w, y: b.sy / b.area / h, size: b.area / (w * h) }))
 }
 
-export const __internals = { findBlobs, isHold, matches }
+// 덩어리 윤곽이 곧은 모서리의 다각형인지(볼륨) 둥근지(큰 홀드). 반환: {verts, solidity, fit}
+// - 경계 픽셀의 볼록 껍질을 더글러스-포이커로 단순화했을 때 꼭짓점 수: 삼각형·사각뿔 볼륨은 3~6, 둥근 홀드는 8 이상
+// - fit: 경계 픽셀이 단순화한 다각형 변에서 평균 얼마나 떨어졌는지(덩어리 크기 대비). 곧은 모서리면 작음
+// - solidity: 덩어리 넓이 / 볼록 껍질 넓이. 볼륨은 꽉 찬 볼록 도형
+function polygonShape(label, b, w) {
+  const pts = []
+  for (let y = b.y0; y <= b.y1; y++)
+    for (let x = b.x0; x <= b.x1; x++) {
+      const p = y * w + x
+      if (label[p] !== b.id) continue
+      if (x === b.x0 || x === b.x1 || y === b.y0 || y === b.y1 || label[p - 1] !== b.id || label[p + 1] !== b.id || label[p - w] !== b.id || label[p + w] !== b.id) pts.push([x, y])
+    }
+  if (pts.length < 8) return { verts: 99, solidity: 0, fit: 1 }
+  const sorted = [...pts].sort((a, c) => a[0] - c[0] || a[1] - c[1])
+  const cross = (o, a, c) => (a[0] - o[0]) * (c[1] - o[1]) - (a[1] - o[1]) * (c[0] - o[0])
+  const lower = []
+  for (const q of sorted) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], q) <= 0) lower.pop()
+    lower.push(q)
+  }
+  const upper = []
+  for (let i = sorted.length - 1; i >= 0; i--) {
+    const q = sorted[i]
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], q) <= 0) upper.pop()
+    upper.push(q)
+  }
+  const hull = [...lower.slice(0, -1), ...upper.slice(0, -1)]
+  let hullArea = 0
+  for (let i = 0; i < hull.length; i++) {
+    const a = hull[i]
+    const c = hull[(i + 1) % hull.length]
+    hullArea += a[0] * c[1] - c[0] * a[1]
+  }
+  hullArea = Math.abs(hullArea) / 2 || 1
+  const segD = (q, a, c) => {
+    const vx = c[0] - a[0]
+    const vy = c[1] - a[1]
+    const L = vx * vx + vy * vy || 1e-9
+    const t = Math.max(0, Math.min(1, ((q[0] - a[0]) * vx + (q[1] - a[1]) * vy) / L))
+    return Math.hypot(q[0] - a[0] - vx * t, q[1] - a[1] - vy * t)
+  }
+  // 닫힌 껍질을 가장 먼 두 점에서 나눠 각각 더글러스-포이커
+  const eps = 0.06 * Math.sqrt(hullArea)
+  const dp = (arr) => {
+    if (arr.length <= 2) return arr
+    let far = 0
+    let fi = 0
+    for (let i = 1; i < arr.length - 1; i++) {
+      const d = segD(arr[i], arr[0], arr[arr.length - 1])
+      if (d > far) (far = d), (fi = i)
+    }
+    if (far <= eps) return [arr[0], arr[arr.length - 1]]
+    return [...dp(arr.slice(0, fi + 1)).slice(0, -1), ...dp(arr.slice(fi))]
+  }
+  let i0 = 0
+  let j0 = 0
+  let best = -1
+  for (let i = 0; i < hull.length; i++)
+    for (let j = i + 1; j < hull.length; j++) {
+      const d = Math.hypot(hull[i][0] - hull[j][0], hull[i][1] - hull[j][1])
+      if (d > best) (best = d), (i0 = i), (j0 = j)
+    }
+  const a1 = dp(hull.slice(i0, j0 + 1))
+  const a2 = dp([...hull.slice(j0), ...hull.slice(0, i0 + 1)])
+  const poly = [...a1.slice(0, -1), ...a2.slice(0, -1)]
+  let fs = 0
+  for (const q of pts) {
+    let m = Infinity
+    for (let k = 0; k < poly.length; k++) m = Math.min(m, segD(q, poly[k], poly[(k + 1) % poly.length]))
+    fs += m
+  }
+  return { verts: poly.length, solidity: b.area / hullArea, fit: fs / pts.length / Math.sqrt(hullArea), poly }
+}
+
+// 다각형 볼륨 판정 기준
+const isPolygonVolume = (sh) => sh.verts <= 6 && sh.solidity >= 0.8 && sh.fit <= 0.05
+
+// 볼륨 찾기: 색과 상관없이 벽 배경이 아닌 큰 덩어리 중 곧은 모서리의 다각형. 반환 형식은 detectHolds와 같음(volume: true)
+// - 배경: 벽 색과 비슷한 픽셀. 회색 볼륨이 흰 벽의 그림자로 묻히지 않게 어두운 쪽 허용을 좁게(-22)
+// - 덩어리: 이웃 픽셀끼리 색(색조 위주, 밝기는 절반 가중)이 비슷할 때만 이어, 붙어 있는 다른 색 홀드와 갈라짐.
+//   볼륨의 면은 조명에 따라 밝기만 달라서 같은 덩어리로 남음
+export function detectVolumes(img, dbg) {
+  const { w, h } = img
+  const bgs = backgroundColors(img)
+  if (!bgs.length) return []
+  const lab = img.lab
+  const mask = new Uint8Array(w * h)
+  for (let p = 0; p < w * h; p++) {
+    const i = p * 3
+    let near = false
+    for (const bg of bgs) {
+      const dc = Math.hypot(lab[i + 1] - bg.a, lab[i + 2] - bg.b)
+      const dl = lab[i] - bg.L
+      if (dc < 12 && dl < 12 && dl > -22) {
+        near = true
+        break
+      }
+    }
+    if (!near) mask[p] = 1
+  }
+  // 가장자리를 2픽셀 깎아(침식) 볼륨에 가늘게 붙은 같은 색 홀드·그림자 연결을 끊음
+  let m = open3(mask, w, h)
+  for (let it = 0; it < 2; it++) {
+    const e = new Uint8Array(w * h)
+    for (let y = 1; y < h - 1; y++)
+      for (let x = 1; x < w - 1; x++) {
+        const p = y * w + x
+        e[p] = m[p] && m[p - 1] && m[p + 1] && m[p - w] && m[p + w] ? 1 : 0
+      }
+    m = e
+  }
+  const label = new Int32Array(w * h)
+  const blobs = []
+  const stack = []
+  const close = (p, q) => Math.hypot(0.5 * (lab[p * 3] - lab[q * 3]), lab[p * 3 + 1] - lab[q * 3 + 1], lab[p * 3 + 2] - lab[q * 3 + 2]) < 9
+  for (let start = 0; start < w * h; start++) {
+    if (!m[start] || label[start]) continue
+    const id = blobs.length + 1
+    const b = { id, area: 0, sx: 0, sy: 0, sxx: 0, syy: 0, sxy: 0, x0: w, x1: 0, y0: h, y1: 0, tx: 0, bx: 0, ly: 0, ry: 0 }
+    label[start] = id
+    stack.push(start)
+    while (stack.length) {
+      const p = stack.pop()
+      const x = p % w
+      const y = (p / w) | 0
+      b.area++
+      b.sx += x
+      b.sy += y
+      b.sxx += x * x
+      b.syy += y * y
+      b.sxy += x * y
+      if (x < b.x0) (b.x0 = x), (b.ly = y)
+      if (x > b.x1) (b.x1 = x), (b.ry = y)
+      if (y < b.y0) (b.y0 = y), (b.tx = x)
+      if (y > b.y1) (b.y1 = y), (b.bx = x)
+      for (const q of [x > 0 ? p - 1 : -1, x < w - 1 ? p + 1 : -1, y > 0 ? p - w : -1, y < h - 1 ? p + w : -1])
+        if (q >= 0 && m[q] && !label[q] && close(p, q)) (label[q] = id), stack.push(q)
+    }
+    blobs.push(b)
+  }
+  const out = []
+  for (const b of blobs) {
+    if (b.area < w * h * 0.004 || b.area > w * h * 0.2) continue
+    const bw = b.x1 - b.x0 + 1
+    // 사진 테두리에 닿은 덩어리(천장 구조물, 바닥, 매트)와 아주 넓은 덩어리는 제외
+    if (bw > 0.6 * w || b.x0 <= 2 || b.y0 <= 2 || b.x1 >= w - 3 || b.y1 >= h - 3) continue
+    const sh = polygonShape(label, b, w)
+    if (dbg) dbg.push({ x: b.sx / b.area / w, y: b.sy / b.area / h, area: b.area / (w * h), verts: sh.verts, solidity: sh.solidity, fit: sh.fit, poly: sh.poly?.map(([x, y]) => [x / w, y / h]) })
+    if (!isPolygonVolume(sh)) continue
+    out.push(toHold(b, w, h, true))
+  }
+  return out
+}
+
+export const __internals = { findBlobs, isHold, matches, polygonShape }

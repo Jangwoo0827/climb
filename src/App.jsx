@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { detectAllHolds, detectHolds, pickTarget, sampleImage } from './utils/detect.js'
+import { detectAllHolds, detectHolds, detectVolumes, pickTarget, sampleImage } from './utils/detect.js'
 import { FEET, HOLD_ORDER, HOLD_TYPES, MOVES, estimateHoldType } from './utils/glossary.js'
 import { buildSequence } from './utils/stickman.js'
 import { blendPose, moversOf } from './utils/animate.js'
@@ -348,7 +348,10 @@ export default function App() {
     if (!target) {
       const t = pickTarget(photo.img, nx, ny)
       setTarget(t)
-      setHolds(detectHolds(photo.img, t))
+      // 루트 색 홀드 + 색과 상관없는 볼륨(실내 암장의 볼륨은 보통 모든 루트에서 쓸 수 있음)
+      const found = detectHolds(photo.img, t)
+      const vols = detectVolumes(photo.img).filter((v) => !found.some((f) => Math.hypot((f.x - v.x) * photo.aspect, f.y - v.y) < 0.04))
+      setHolds([...found, ...vols])
       setFrameIdx(0)
       return
     }
