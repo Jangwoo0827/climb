@@ -32,6 +32,9 @@ let hipHigh = 0
 let handGap = 0
 let twoHolds = 0
 let bad = 0
+let armsCross = 0
+let floatBent = 0
+const segX = (a, b, c, d) => { const o = (p, q, r) => Math.sign((q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x)); return o(a, b, c) * o(a, b, d) < 0 && o(c, d, a) * o(c, d, b) < 0 }
 for (const [name, sc] of Object.entries(scenes).filter(([n]) => !process.env.SCENE || n === process.env.SCENE))
   for (const W of [3.5, 5])
     for (const height of [150, 165, 185])
@@ -78,6 +81,18 @@ for (const [name, sc] of Object.entries(scenes).filter(([n]) => !process.env.SCE
               if (Math.abs(p.footL.x - p.footR.x) > 0.62 * H && fig.move !== 'flag') issues.push('다리 찢음')
               // 손이 어깨 위에 있는데 팔을 75% 미만으로 굽힌 매달림(팔 힘 낭비)
               for (const [sh, h] of [[p.shL, p.hl], [p.shR, p.hr]]) if (h.y > sh.y && Math.hypot(sh.x - h.x, sh.y - h.y) < 0.75 * arm && fig.move !== 'lockoff' && fig.move !== 'mantle') bentArms++
+              // 두 팔이 서로 겹침(교차)
+              const armL = [[p.shL, p.elL], [p.elL, p.hl]]
+              const armR = [[p.shR, p.elR], [p.elR, p.hr]]
+              if (armL.some(([a, b]) => armR.some(([c, d]) => segX(a, b, c, d)))) { armsCross++; issues.push('두 팔 겹침') }
+              // 발 지지가 약한데(다리 하중 어림 0.35 미만) 팔을 크게 굽혀 매달림(3D 팔꿈치 60° 넘게)
+              {
+                const zs = 0.15 * H
+                const fl = (sh, el, h) => { const l1 = Math.hypot(sh.x - el.x, sh.y - el.y); const l2 = Math.hypot(h.x - el.x, h.y - el.y); const d = Math.hypot(Math.hypot(sh.x - h.x, sh.y - h.y), zs); return d >= l1 + l2 ? 0 : 180 - Math.acos(Math.max(-1, Math.min(1, (l1 * l1 + l2 * l2 - d * d) / (2 * l1 * l2)))) * 180 / Math.PI }
+                const sh2 = (f, info) => { const v = Math.max(0, Math.min(1, (p.hip.y - f.y) / (Math.hypot(p.hip.x - f.x, p.hip.y - f.y) || 1))); return 0.45 * v * (info.kind === 'smear' ? 0.25 : info.kind === 'heelhook' ? 0.2 : 1) }
+                const legs = sh2(p.footL, fig.feetInfo[0]) + sh2(p.footR, fig.feetInfo[1])
+                if (legs < 0.35 && Math.max(fl(p.shL, p.elL, p.hl), fl(p.shR, p.elR, p.hr)) > 60 && fig.move !== 'mantle' && !sitStartEarly) { floatBent++; issues.push('발 지지 약한데 팔 굽혀 매달림') } // 싯 스타트 구간은 발이 엉덩이 높이라 하중 어림이 맞지 않아 제외
+              }
               const onHold = fig.feetInfo.filter((f) => f.id !== null).length
               if (onHold === 0) smearBoth++
               if (fm) footMatch++
@@ -99,5 +114,5 @@ for (const [name, sc] of Object.entries(scenes).filter(([n]) => !process.env.SCE
         })
       }
 if (process.env.SCENE) console.log('scene', process.env.SCENE)
-console.log('자세', total, '문제', bad, '· 발이 홀드에 0개', smearBoth, '· 1개', oneFoot, '· 손 이동', steps, '중 크게 뻗는 이동', longMoves, '· 팔 굽혀 매달림', bentArms, '· 합발', footMatch, '· 엉덩이 높음', hipHigh, '· 두 손 높이차 60cm↑', handGap, '· 다른 홀드 두 개', twoHolds, '· 발 옮기기 프레임', footFrames, '· 손과 발을 함께 옮김', multiLimb, '/ 손 동작', handFrames)
+console.log('자세', total, '문제', bad, '· 발이 홀드에 0개', smearBoth, '· 1개', oneFoot, '· 손 이동', steps, '중 크게 뻗는 이동', longMoves, '· 팔 굽혀 매달림', bentArms, '· 합발', footMatch, '· 엉덩이 높음', hipHigh, '· 두 손 높이차 60cm↑', handGap, '· 다른 홀드 두 개', twoHolds, '· 발 옮기기 프레임', footFrames, '· 손과 발을 함께 옮김', multiLimb, '· 팔 겹침', armsCross, '· 발 약한데 팔 굽혀 매달림', floatBent, '/ 손 동작', handFrames)
 process.exitCode = bad ? 1 : 0

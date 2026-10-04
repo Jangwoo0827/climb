@@ -20,6 +20,12 @@ function distSeg(p, a, b) {
 // 두 마디(길이 l1, l2)로 a에서 b까지 이어지는 관절 위치 후보 2개 중 하나를 고른다.
 // avoid가 있으면 그 선분(몸통)에서 더 먼 쪽을 고르고, 비슷하면 side(-1 왼쪽, +1 오른쪽) 쪽을 고른다.
 // 팔꿈치: 어깨-손을 잇는 선의 아래쪽으로만 꺾음(위로 드는 치킨 윙 금지). 몸통에 닿는 자세는 몸 위치 쪽에서 감점해 피함
+// 선분 ab와 cd가 서로 가로지르는지(끝점이 닿는 것은 제외)
+function segCross(a, b, c, d) {
+  const o = (p, q, r) => Math.sign((q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x))
+  return o(a, b, c) * o(a, b, d) < 0 && o(c, d, a) * o(c, d, b) < 0
+}
+
 function elbow(sh, hand, l) {
   const c = joint(sh, hand, l, l, 1, null, 0)
   const full = dist(sh, hand) || 1e-6
@@ -246,6 +252,8 @@ function makeSolver(holds, body, heightM) {
           const S = { x: hx + lean, y: hy + torso }
           let cost = footCost
           let reachOk = true
+          const armSegs = []
+          let maxFlex = 0
 
           // 팔: 동작에 맞는 만큼 펴는 게 좋고, 완전히 뻗는 건 감점. 손이 반대편 어깨 너머면 감점
           for (const [dx, h, wrong] of [
@@ -264,9 +272,24 @@ function makeSolver(holds, body, heightM) {
             const sh = { x: S.x + dx, y: S.y }
             const el = elbow(sh, h, arm / 2)
             if (distSeg(el, S, hip) < 0.05) reachOk = false // 팔꿈치가 몸통을 뚫는 자세는 쓰지 않음
+            armSegs.push([[sh, el], [el, h]])
+            // 팔꿈치 굽힘(어깨의 벽 앞 깊이 포함 3D): 0 = 곧게 폄
+            const d3 = Math.hypot(d, SHOULDER_Z * heightM)
+            const l = arm / 2
+            maxFlex = Math.max(maxFlex, d3 >= arm ? 0 : Math.PI - Math.acos(Math.max(-1, Math.min(1, (2 * l * l - d3 * d3) / (2 * l * l)))))
             if (h.y < S.y) cost += ((S.y - h.y) / arm) ** 2 * 6 // 손이 어깨 아래면 몸을 낮춰 손을 어깨 높이 근처로
           }
 
+          // 두 팔이 서로 겹치는(교차하는) 자세는 쓰지 않음
+          if (armSegs[0].some(([a, b]) => armSegs[1].some(([c, d]) => segCross(a, b, c, d)))) reachOk = false
+          // 발이 체중을 거의 못 받는데(벽 밀기·옆으로 뻗은 다리) 팔을 크게 굽혀 매달리는 자세는 비현실적 근력 → 쓰지 않음(완화 단계와 맨틀 제외)
+          if (!relax && !sit && opts?.move !== 'mantle' && maxFlex > 60 * Math.PI / 180) {
+            const share = (f) => {
+              const v = Math.max(0, Math.min(1, (hip.y - f.p.y) / (dist(hip, f.p) || 1)))
+              return 0.45 * v * (f.id === null ? 0.25 : f.p.y > hip.y - 0.3 * leg ? 0.2 : 1)
+            }
+            if (share(f1) + share(f2) < 0.35) reachOk = false
+          }
           cost += ((hx - fx) / torso) ** 2 * 1.2 // 체중이 발 위에 실리도록
           // 엉덩이를 내려 앉듯이 매달림: 팔을 곧게 폈을 때의 엉덩이 높이보다 높으면 감점
           // 높은 손에 팔을 곧게 펴고 매달렸을 때의 엉덩이 높이가 목표(낮은 손은 굽혀도 됨). 맨틀링만 예외
