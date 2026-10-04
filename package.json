@@ -14,7 +14,8 @@
     "@capacitor/core": "^8.5.2",
     "@tensorflow/tfjs": "^4.22.0",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "three": "^0.170.0"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^6.1.1",

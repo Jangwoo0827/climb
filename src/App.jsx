@@ -1,10 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
 import { detectAllHolds, detectHolds, detectVolumes, pickTarget, sampleImage } from './utils/detect.js'
 import { FEET, HOLD_ORDER, HOLD_TYPES, MOVES, estimateHoldType } from './utils/glossary.js'
 import { buildSequence } from './utils/stickman.js'
 import { blendPose, moversOf } from './utils/animate.js'
 import { TERM_NAMES, scoreFrames } from './utils/reward.js'
 import { pose3d, project } from './utils/depth.js'
+import { handPose } from './utils/hand.js'
+
+const View3D = lazy(() => import('./View3D.jsx'))
 import { LEVELS, bodyModel, estimateGrade, findRoute, generateRoute, toMeters } from './utils/route.js'
 
 // 사진 없이 체험할 수 있는 데모 벽 (초록색 = 우리 루트, 나머지는 다른 루트)
@@ -38,7 +41,7 @@ function makeDemoWall() {
 }
 
 // 벽 사진 위에 그리는 졸라맨(2.5D): 벽에서 먼 부위는 살짝 비스듬히 옮기고 굵게, 벽 쪽 부위는 가늘게
-function Stickman({ p3, sv, headR, hard, label, u, heightM }) {
+function Stickman({ p3, sv, headR, hard, label, u, heightM, handTypes }) {
   const P = Object.fromEntries(Object.entries(p3).map(([k, q]) => [k, project(q)]))
   const color = hard ? '#ff8a6b' : '#ffffff'
   const segs = [
@@ -60,6 +63,19 @@ function Stickman({ p3, sv, headR, hard, label, u, heightM }) {
           <polyline {...halo} stroke={color} strokeOpacity={0.75 + Math.min(0.25, sg.z / heightM)} strokeWidth={4 * u * wOf(sg.z)} points={`${sv(P[sg.a])} ${sv(P[sg.b])}`} />
         </g>
       ))}
+      {/* 손: 홀드 종류별 잡는 모양(손바닥, 손가락, 엄지) */}
+      {[['L', 'hl', 'elL'], ['R', 'hr', 'elR']].map(([side, hk, ek]) => {
+        const hd = handPose(handTypes?.[side], p3[hk], p3[ek], side, heightM)
+        const pts = (arr) => arr.map((q) => sv(project(q))).join(' ')
+        return (
+          <g key={side}>
+            <polygon points={pts(hd.palm)} fill="#ffd9b3" stroke="#000" strokeWidth={1.2 * u} />
+            {[...hd.fingers, hd.thumb].map((ch, i) => (
+              <polyline key={i} points={pts(ch)} fill="none" stroke="#ffd9b3" strokeWidth={2.2 * u} strokeLinecap="round" strokeLinejoin="round" />
+            ))}
+          </g>
+        )
+      })}
       <circle cx={hx} cy={hy} r={hr} fill="rgba(0,0,0,0.45)" stroke={color} strokeWidth={4 * u} />
       {label && (
         <text x={Number(hx) + hr + 6 * u} y={Number(hy) + 6 * u} textAnchor="start" fontSize={17 * u} fontWeight="800" fill="#c77dff" stroke="#000" strokeWidth={3 * u} paintOrder="stroke">
@@ -438,6 +454,22 @@ export default function App() {
     return order
   }, [plan, frames])
   const shownPose = useTweenPose(fig?.p ?? null)
+  const [view3d, setView3d] = useState(false)
+  // 손이 잡은 홀드의 종류(왼손/오른손): 그림의 손 위치에서 가장 가까운 잡은 홀드
+  const handTypes = useMemo(() => {
+    if (!fig || !plan?.m) return {}
+    const typeAt = (pt) => {
+      let best = null
+      for (const id of fig.hands) {
+        const h = plan.m[id]
+        const d = Math.hypot(h.mx - pt.x, h.my - pt.y)
+        if (!best || d < best.d) best = { d, t: h.type }
+      }
+      return best?.t
+    }
+    return { L: typeAt(fig.p.hl), R: typeAt(fig.p.hr) }
+  }, [fig, plan])
+  const smearSides = useMemo(() => Object.fromEntries((fig?.feetInfo ?? []).map((f) => [f.side, f.id === null])), [fig])
   const shown3 = useMemo(() => (shownPose && fig ? pose3d(shownPose, height / 100, fig.feetInfo) : null), [shownPose, fig, height])
   const [playing, setPlaying] = useState(false)
   // 재생: 처음부터 마지막 동작까지 자동으로 한 동작씩 넘김
@@ -531,12 +563,22 @@ export default function App() {
       {tab === 'course' && (
         <main className="course">
           <div className="stage" ref={stageRef}>
+            {photo && fig && (
+              <button className="view-toggle" onClick={() => setView3d(!view3d)}>{view3d ? '🖼 사진' : '🧊 3D'}</button>
+            )}
             {!photo ? (
               <div className="empty">
                 <div className="big">벽을 보여주세요</div>
                 <p>사진을 찍으면 내 몸에 맞는<br />경로와 자세를 알려줘요</p>
                 <button className="btn primary wide" onClick={() => fileRef.current.click()}>📷 사진 찍기 / 선택</button>
                 <button className="btn wide" onClick={useDemo}>데모 벽으로 체험</button>
+              </div>
+            ) : view3d && shown3 ? (
+              <div className="wall wall3d" style={{ width: fit.w, height: fit.h }}>
+                <Suspense fallback={<div className="banner">3D 불러오는 중…</div>}>
+                  <View3D photoUrl={photo.url} wallW={wallWidth} wallH={wallWidth / photo.aspect} p3={shown3} handTypes={handTypes} smear={smearSides} heightM={height / 100} hard={step?.hard} />
+                </Suspense>
+                <div className="hint3d">드래그로 돌리기 · 휠로 확대 · 하늘색 발 = 홀드, 주황 발 = 벽 밀기</div>
               </div>
             ) : (
               <div className="wall" ref={boxRef} onClick={onTap} style={{ width: fit.w, height: fit.h }}>
@@ -562,7 +604,7 @@ export default function App() {
                       <line key={'sm' + f.side} x1={Number(sv(shownPose[f.side === 'L' ? 'footL' : 'footR']).split(',')[0]) - 10 * u} x2={Number(sv(shownPose[f.side === 'L' ? 'footL' : 'footR']).split(',')[0]) + 10 * u} y1={Number(sv(shownPose[f.side === 'L' ? 'footL' : 'footR']).split(',')[1]) + 4 * u} y2={Number(sv(shownPose[f.side === 'L' ? 'footL' : 'footR']).split(',')[1]) + 4 * u} stroke="#4dd0ff" strokeWidth={4 * u} strokeLinecap="round" />
                     ) : null,
                   )}
-                  {fig && shown3 && <Stickman p3={shown3} sv={sv} u={u} heightM={height / 100} headR={0.06 * (height / 100) * k} hard={step?.hard} label={fig.airborne ? '점프!' : null} />}
+                  {fig && shown3 && <Stickman p3={shown3} handTypes={handTypes} sv={sv} u={u} heightM={height / 100} headR={0.06 * (height / 100) * k} hard={step?.hard} label={fig.airborne ? '점프!' : null} />}
                   {typedHolds.map((h, i) =>
                     h.type === 'volume' && h.extent ? (
                       <circle key={i} cx={h.x * photo.aspect} cy={h.y} r={Math.sqrt((h.size * photo.aspect) / Math.PI) * 0.85} fill="none" stroke="#b0e0ff" strokeWidth={2.5 * u} strokeDasharray={`${8 * u} ${5 * u}`} />

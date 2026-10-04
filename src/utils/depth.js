@@ -39,8 +39,8 @@ export function pose3d(p, heightM, feetInfo) {
     hip: at(p.hip, zh),
     hipL: at(p.hipL, zh),
     hipR: at(p.hipR, zh),
-    hl: at(p.hl, 0.02), // 홀드를 쥔 손(홀드 두께만큼 앞)
-    hr: at(p.hr, 0.02),
+    hl: at(p.hl, 0.05), // 홀드를 쥔 손(홀드 두께만큼 앞)
+    hr: at(p.hr, 0.05),
   }
   const smear = (side) => feetInfo?.find((f) => f.side === side)?.id === null
   P.footL = at(p.footL, smear('L') ? 0 : 0.03) // 벽 밀기는 발끝이 벽면에 바로
