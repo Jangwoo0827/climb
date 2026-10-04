@@ -110,7 +110,7 @@ for (const [name, sc] of Object.entries(scenes).filter(([n]) => !process.env.SCE
             }
             if (issues.length) {
               bad++
-              if (bad <= 8) console.log(name, W, height, level, 'step', i, fr.k, issues.join(', '))
+              if (bad <= 400) console.log(name, W, height, level, 'step', i, fr.k, issues.join(', '))
             }
           }
         })

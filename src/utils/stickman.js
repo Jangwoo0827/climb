@@ -196,6 +196,8 @@ function makeSolver(holds, body, heightM) {
             const d = dist(f.p, hip)
             if (sit) return d <= 0.95 * leg && d >= 0.3 * leg && f.p.y <= hip.y + 0.15 * leg
             // 동작 중간 자세: 무릎을 좀 더 굽혀도 되지만 다리를 옆으로 눕히지는 않음(수직에서 약 55도까지)
+            // 아주 완화(3차): 동작 중간 한 순간만 — 무릎을 더 굽히고 다리를 더 옆으로 둬도 됨
+            if (opts.loose === 2) return d <= 0.99 * leg && d >= 0.48 * leg && f.p.y <= hip.y - 0.05 * leg && Math.abs(f.p.x - hip.x) <= 1.35 * (hip.y - f.p.y) + 0.02
             if (opts.loose) return d <= 0.97 * leg && d >= 0.5 * leg && f.p.y <= hip.y - 0.15 * leg && Math.abs(f.p.x - hip.x) <= 1.35 * (hip.y - f.p.y) - 0.04
             // 발을 고르는 조건과 같게: 다리를 적당히 펴고(무릎이 접히지 않게), 엉덩이 아래쪽 방향(다리를 눕히지 않게)
             return d <= 0.97 * leg && d >= 0.55 * leg && f.p.y <= hip.y - Math.min(highStep, 0.2) * leg && Math.abs(f.p.x - hip.x) <= 1.2 * (hip.y - f.p.y) - 0.04
@@ -205,7 +207,7 @@ function makeSolver(holds, body, heightM) {
           const fmatch = f1.id !== null && f1.id === f2.id
           if (!fmatch && (dist(f1.p, f2.p) < 0.16 * heightM || Math.abs(f1.p.x - f2.p.x) > 0.58 * heightM)) continue
           // 손 프레임은 무게중심이 두 발 사이(발을 옮기는 도중인 발 프레임은 잠깐 벗어나도 됨)
-          if (!opts.footStep && !opts.loose && !fmatch && !sit && (hx < Math.min(f1.p.x, f2.p.x) - 0.04 || hx > Math.max(f1.p.x, f2.p.x) + 0.04)) continue
+          if (!opts.footStep && opts.loose !== 1 && !fmatch && !sit && (hx < Math.min(f1.p.x, f2.p.x) - 0.04 || hx > Math.max(f1.p.x, f2.p.x) + 0.04)) continue
           footCost = 0
         } else {
         const fy = sit ? Math.max(FOOT_CLEAR + 0.1, hy) : Math.max(FOOT_CLEAR, hy - 0.78 * leg)
@@ -490,7 +492,7 @@ export function buildSequence(route, holds, body, heightM, { useReward = true } 
       orders.sort((a, b) => unsupported(a) - unsupported(b) || b.indexOf('hand') - a.indexOf('hand'))
       // 엄격한 조건으로 되는 순서를 모두 모으고, 하나도 없으면 중간 자세만 조건을 완화(사람도 동작 중간엔 잠깐 불편한 자세를 지남)
       const plans = []
-      for (const loose of [false, true]) {
+      for (const loose of [0, 1, 2]) {
         if (plans.length) break
         for (const order of orders) {
           let hands = [L, R]
@@ -506,7 +508,7 @@ export function buildSequence(route, holds, body, heightM, { useReward = true } 
             }
             const isHand = limb === 'hand'
             const last = limb === order[order.length - 1] // 마지막(도착) 자세는 항상 엄격한 조건
-            const r = fixed(hands[0], hands[1], feet, hip, { ...(isHand ? opts : { move: null, footStep: true }), loose: loose && !last })
+            const r = fixed(hands[0], hands[1], feet, hip, { ...(isHand ? opts : { move: null, footStep: true }), loose: last ? 0 : loose })
             if (!r) {
               ok = false
               break

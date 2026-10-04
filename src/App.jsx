@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { detectAllHolds, detectHolds, pickTarget, sampleImage } from './utils/detect.js'
 import { FEET, HOLD_ORDER, HOLD_TYPES, MOVES, estimateHoldType } from './utils/glossary.js'
 import { buildSequence } from './utils/stickman.js'
-import { blendPose } from './utils/animate.js'
+import { blendPose, moversOf } from './utils/animate.js'
 import { TERM_NAMES, scoreFrames } from './utils/reward.js'
 import { LEVELS, bodyModel, estimateGrade, findRoute, generateRoute, toMeters } from './utils/route.js'
 
@@ -120,10 +120,13 @@ function useTweenPose(target, ms = 700) {
       return
     }
     fromRef.current = from
+    // 손발 여러 개가 바뀌는 동작은 하나씩 차례로 옮기므로 그만큼 길게
+    const n = moversOf(from, target).length
+    const dur = n > 1 ? ms * (0.4 + 0.6 * n) : ms
     let raf
     const t0 = performance.now()
     const tick = (now) => {
-      const t = Math.min(1, (now - t0) / ms)
+      const t = Math.min(1, (now - t0) / dur)
       const p = blendPose(fromRef.current, target, t)
       shownRef.current = p
       setShown(p)
@@ -135,7 +138,7 @@ function useTweenPose(target, ms = 700) {
       cancelAnimationFrame(raf)
       shownRef.current = target
       setShown(target)
-    }, ms + 80)
+    }, dur + 80)
     return () => {
       cancelAnimationFrame(raf)
       clearTimeout(done)
@@ -409,9 +412,9 @@ export default function App() {
       setPlaying(false)
       return
     }
-    const id = setTimeout(() => setFrameIdx(fi + 1), frame.k === 'jump' ? 650 : frame.k === 'foot' ? 950 : 1200)
+    const id = setTimeout(() => setFrameIdx(fi + 1), frame.k === 'jump' ? 650 : frame.k === 'foot' ? 950 : frame.together ? 2000 : 1200)
     return () => clearTimeout(id)
-  }, [playing, fi, frames.length, frame.k])
+  }, [playing, fi, frames.length, frame.k, frame.together])
   const togglePlay = () => {
     if (playing) setPlaying(false)
     else {

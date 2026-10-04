@@ -40,46 +40,75 @@ function sideOf(root, joint, end) {
   return c >= 0 ? 1 : -1
 }
 
+// 이번 동작에서 움직이는 손발: 발 먼저(많이 움직이는 발부터), 손은 나중 — 한 번에 하나씩 차례로 옮김
+export function moversOf(from, to) {
+  const ms = Object.keys(END).map((k) => ({ k, d: dist(from[k], to[k]) })).filter((m) => m.d > 0.03)
+  ms.sort((a, b) => (a.k.startsWith('foot') ? 0 : 1) - (b.k.startsWith('foot') ? 0 : 1) || b.d - a.d)
+  return ms
+}
+
 // from, to: 관절 좌표(stickman.js의 p), t: 0~1
 export function blendPose(from, to, t) {
-  // 1) 이번 동작에서 움직이는 손이나 발(가장 많이 움직인 끝점)
-  let mover = null
-  let most = 0.03
-  for (const key of Object.keys(END)) {
-    const d = dist(from[key], to[key])
-    if (d > most) {
-      most = d
-      mover = key
-    }
-  }
-  // 2) 몸 중심(엉덩이·어깨 중심)을 먼저 옮김: 스프링으로 살짝 지나쳤다 자리 잡기
-  const tb = mover ? clamp01(t / 0.65) : t
-  const ub = mover ? spring(tb) : easeInOut(t)
+  // 1) 움직이는 손발과 각자의 시간 구간: 여러 개면 0.15~1을 나눠 하나씩(손발 따로)
+  const movers = moversOf(from, to)
+  const n = movers.length
+  const win = {}
+  const w = n > 1 ? 0.85 / n : 0.7
+  movers.forEach((m, i) => (win[m.k] = n > 1 ? [0.15 + i * w, 0.15 + (i + 1) * w] : [0.3, 1]))
+  // 2) 몸 중심(엉덩이·어깨 중심): 스프링으로 살짝 지나쳤다 자리 잡기. 여러 손발이면 마지막 손발이 출발할 무렵까지 몸을 옮김
+  const bodyEnd = n > 1 ? win[movers[n - 1].k][0] + w * 0.5 : 0.65
+  const tb = n ? clamp01(t / bodyEnd) : t
+  const ub = n ? spring(tb) : easeInOut(t)
   const hip = lerp(from.hip, to.hip, ub)
   const neck = lerp(from.neck, to.neck, ub)
   const p = { hip, neck }
   // 골반·어깨·머리도 몸 중심과 같은 속도로 이전 자세에서 목표 자세로(시작·끝이 두 자세와 정확히 맞음)
   for (const k of ['hipL', 'hipR', 'shL', 'shR', 'head']) p[k] = lerp(from[k], to[k], ub)
 
-  // 3) 손발 끝: 움직이는 것은 나중에(30~100%) 들어 올려 호를 그리며, 나머지는 홀드에 그대로
+  // 3) 손발 끝: 움직이는 것은 자기 구간에만 들어 올려 호를 그리며, 나머지는 홀드에 그대로
   const center = { x: (to.hip.x + to.neck.x) / 2, y: (to.hip.y + to.neck.y) / 2 }
+  const uOf = {}
   for (const key of Object.keys(END)) {
-    if (key !== mover) {
+    if (!win[key]) {
       p[key] = lerp(from[key], to[key], easeInOut(t)) // 거의 움직이지 않음(홀드에 고정)
       continue
     }
-    const u = seg(t, 0.3, 1)
+    const u = seg(t, win[key][0], win[key][1])
+    uOf[key] = u
+    const most = dist(from[key], to[key])
     const q = lerp(from[key], to[key], u)
     const lift = Math.sin(Math.PI * u) * Math.min(0.12, 0.25 * most)
     if (key.startsWith('foot')) q.y += lift
     else {
       const ox = q.x - center.x
       const oy = q.y - center.y
-      const n = Math.hypot(ox, oy) || 1
-      q.x += (ox / n) * lift
-      q.y += (oy / n) * lift
+      const nn = Math.hypot(ox, oy) || 1
+      q.x += (ox / nn) * lift
+      q.y += (oy / nn) * lift
     }
     p[key] = q
+  }
+
+  // 3.5) 홀드에 붙어 있는 손발(지금 움직이는 것 제외)이 닿는 범위 안에 몸이 있도록 몸 전체를 끌어당김
+  // (손발 여러 개를 차례로 옮길 때 몸이 먼저 너무 멀리 가서 딛고 있던 발이 끌려가는 것 방지)
+  // 움직이는 중인 손발은 영향이 0, 출발·도착 순간으로 갈수록 부드럽게 1(뚝 끊기지 않게)
+  const grip = (k) => (win[k] ? (1 - 2 * uOf[k]) ** 2 : 1)
+  for (let it = 0; it < 6; it++) {
+    let cx = 0
+    let cy = 0
+    let wsum = 0
+    for (const [end, [rootKey, jointKey]] of Object.entries(END)) {
+      const g = grip(end)
+      const L = dist(to[rootKey], to[jointKey]) + dist(to[jointKey], to[end]) - 1e-4
+      const d = dist(p[rootKey], p[end])
+      if (d <= L || g <= 0) continue
+      cx += g * ((p[end].x - p[rootKey].x) / d) * (d - L)
+      cy += g * ((p[end].y - p[rootKey].y) / d) * (d - L)
+      wsum += g
+    }
+    if (!wsum) break
+    const f = 0.5 // 절반씩 여러 번 당겨 여러 손발 사이에서 균형
+    for (const k of ['hip', 'neck', 'hipL', 'hipR', 'shL', 'shR', 'head']) p[k] = { x: p[k].x + (cx / wsum) * f, y: p[k].y + (cy / wsum) * f }
   }
 
   // 4) IK: 팔꿈치·무릎을 매번 다시 계산(뼈 길이는 목표 자세의 길이 그대로)
@@ -89,7 +118,7 @@ export function blendPose(from, to, t) {
     // 꺾이는 방향: 이전·목표 자세가 같은 쪽이면 그대로, 다르면 굽힘을 줄였다가 반대쪽으로 넘어감
     const s0 = sideOf(from[rootKey], from[jointKey], from[end])
     const s1 = sideOf(to[rootKey], to[jointKey], to[end])
-    const v = end === mover ? seg(t, 0.3, 1) : ub
+    const v = uOf[end] ?? ub
     const bend = s0 === s1 ? s1 : s0 * (1 - v) + s1 * v
     const { joint, tip } = ik2(p[rootKey], p[end], l1, l2, bend)
     p[jointKey] = joint
