@@ -378,8 +378,8 @@ export default function App() {
     setCloud({ status: 'loading', holds: [] })
     const im = new Image()
     im.onload = async () => {
-      const hs = await detectHoldsCloud(im)
-      if (!cancelled) setCloud(hs ? { status: 'ok', holds: hs } : { status: 'off', holds: [] })
+      const r = await detectHoldsCloud(im)
+      if (!cancelled) setCloud(r.holds ? { status: 'ok', holds: r.holds } : { status: 'fail', holds: [], error: r.error })
     }
     im.src = photo.url
     return () => {
@@ -597,7 +597,7 @@ export default function App() {
           <div className="stage" ref={stageRef}>
             {photo && (
               <div className="detect-src" title="홀드 위치를 찾은 방법">
-                {cloud.status === 'loading' ? '☁️ AI 검출 중…' : holdsSrc === 'cloud' || (!target && cloud.status === 'ok') ? `☁️ AI 검출 ${cloud.holds.length}개` : '🎨 색 검출'}
+                {cloud.status === 'loading' ? '☁️ AI 검출 중…' : holdsSrc === 'cloud' || (!target && cloud.status === 'ok') ? `☁️ AI 검출 ${cloud.holds.length}개` : cloud.status === 'fail' ? `🎨 색 검출 (AI 실패: ${cloud.error})` : '🎨 색 검출'}
               </div>
             )}
             {photo && fig && (
