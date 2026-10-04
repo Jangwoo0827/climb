@@ -1,0 +1,17 @@
+{
+ "name": "experiment_002",
+ "description": "실험 A: 기존 데이터만(dataset/holds_base)으로 새 분할에서 다시 학습 — 공정한 기준선",
+ "model": "Teachable Machine 이미지 모델(MobileNet 전이 학습), experiments/experiment_002/model",
+ "training": {
+  "tool": "Teachable Machine",
+  "settings": "사용자 설정(실험 B와 같게 맞춤)",
+  "augmentation": "Teachable Machine 기본"
+ },
+ "dataset": {
+  "version": "holds_base",
+  "train": "capstone+extra, 종류별 최대 60장",
+  "test": "dataset/holds_public/test 1,320장(capstone 55, extra 7, holdclassificatore 1,258)",
+  "split": "출처별·원본 사진 단위 85/15, 누수 0"
+ },
+ "result_note": "capstone 69.1%가 공정한 기준선. holdclassificatore 23.0%(학습에 없던 합성 제품 사진, 대부분 volume으로 예측)"
+}
