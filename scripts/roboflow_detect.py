@@ -16,7 +16,7 @@ from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 API_URL = 'https://serverless.roboflow.com'
 WORKSPACE = '-wodfh'
-WORKFLOW_ID = 'climbing-hold-detection-g4vwg'
+WORKFLOW_ID = 'climb-hold-detector'
 PARAMS = {'confidence': 0.4, 'iou_threshold': 0.3, 'class_agnostic_nms': False, 'max_detections': 1000}
 
 

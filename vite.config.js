@@ -12,7 +12,7 @@ const sha = (process.env.GITHUB_SHA || (() => {
 })()).slice(0, 7)
 // 개발 서버 전용 Roboflow 중계: 브라우저는 /api/rf-holds 로 사진만 보내고, API 키(환경변수 ROBOFLOW_API_KEY)는 서버에서만 붙임
 // 워크플로 설정은 src/utils/rfDetect.js 와 같게 유지
-const RF_URL = 'https://serverless.roboflow.com/-wodfh/workflows/climbing-hold-detection-g4vwg'
+const RF_URL = 'https://serverless.roboflow.com/-wodfh/workflows/climb-hold-detector'
 const rfProxy = () => ({
   name: 'roboflow-proxy',
   configureServer(server) {

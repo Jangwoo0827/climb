@@ -3,7 +3,7 @@
 // API 키는 앱 코드에 넣지 않음:
 //  1) 개발 서버(npm run dev): /api/rf-holds 중계가 서버 환경변수 ROBOFLOW_API_KEY 로 호출
 //  2) 그 밖(GitHub Pages, 폰 앱): 사용자가 「내 몸」 탭에서 넣은 키(이 기기 localStorage에만 저장)로 직접 호출
-const RF_URL = 'https://serverless.roboflow.com/-wodfh/workflows/climbing-hold-detection-g4vwg'
+const RF_URL = 'https://serverless.roboflow.com/-wodfh/workflows/climb-hold-detector'
 const PARAMS = { confidence: 0.4, iou_threshold: 0.3, class_agnostic_nms: false, max_detections: 1000 }
 const KEY_STORE = 'rf.apiKey'
 const MAX_SIDE = 1280 // 보내는 사진의 긴 변(전송량·속도)
