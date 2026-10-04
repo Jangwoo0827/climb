@@ -1,0 +1,125 @@
+{
+  "_note": "가중치는 명세 표의 초기값(튜닝 대상). 항목 함수는 명세의 '수식'을 그대로 반환하므로 가중치 부호도 명세 표와 같다.",
+  "mode": "additive",
+  "groups": {
+    "task": 1.0,
+    "style": 0.5,
+    "efficiency": 1.0,
+    "stability": 1.0,
+    "joint": 1.0,
+    "smooth": 1.0,
+    "contact": 1.0
+  },
+  "terms": {
+    "progress": 1.0,
+    "height_gain": 0.5,
+    "hand_hold_reached": 5.0,
+    "foot_hold_secured": 2.0,
+    "top_reached": 50.0,
+    "time_penalty": -0.01,
+    "stagnation": -0.1,
+
+    "contact_count": 0.2,
+    "com_support": 0.3,
+    "hip_to_wall": 0.2,
+    "barn_door": -0.05,
+    "slip": -0.5,
+
+    "torque_sq": 0.001,
+    "mech_work": 0.0005,
+    "muscle_effort": 0.01,
+    "leg_load_ratio": 0.3,
+    "straight_arm_rest": 0.1,
+    "grip_excess": -0.05,
+    "unnecessary_dyno": -1.0,
+
+    "rom_barrier": 0.5,
+    "hyperextension": -2.0,
+    "joint_vel_limit": -0.1,
+    "torque_limit": -0.1,
+    "shoulder_shrug": -0.2,
+    "self_collision": -1.0,
+
+    "action_rate": 0.01,
+    "joint_acc": 1e-5,
+    "jerk": 1e-6,
+    "gaze": 0.05,
+
+    "amp_style": 1.0,
+
+    "illegal_contact": -1.0,
+    "toe_precision": 0.1,
+    "grip_alignment": 0.2,
+    "impact": -0.01
+  },
+  "params": {
+    "gamma": 0.99,
+    "t_hold": 0.3,
+    "stable_slip_speed": 0.05,
+    "foot_load_ratio": 0.2,
+    "stagnation_time": 5.0,
+    "stagnation_eps": 0.02,
+    "stagnation_gates_shaping": true,
+    "com_k": 5.0,
+    "hip_wall_k": 3.0,
+    "static_speed": 0.05,
+    "muscle_power": 2,
+    "rom_k": 20.0,
+    "rom_threshold": 0.9,
+    "torque_soft": 0.8,
+    "illegal_allowed": [],
+    "illegal_min_load": 20.0,
+    "toe_mid_penalty": 0.3,
+    "impact_ratio": 1.5,
+    "static_reach": 1.2,
+    "precise_dyno": false
+  },
+  "multiplicative": {
+    "_note": "mode=multiplicative 일 때: R = (task+style 양수부) × Π exp(-k_g·err_g) + (음수부). err_g = 그룹 가중합의 음수 크기",
+    "k": {
+      "efficiency": 1.0,
+      "stability": 1.0,
+      "joint": 1.0,
+      "smooth": 1.0,
+      "contact": 1.0
+    }
+  },
+  "termination": {
+    "fall": -20.0,
+    "illegal_contact": -5.0,
+    "joint_violation": -5.0,
+    "timeout": 0.0,
+    "fall_drop": 0.5,
+    "illegal_time": 1.0,
+    "joint_violation_steps": 30,
+    "max_time": 60.0
+  },
+  "curriculum": {
+    "window": 100,
+    "advance_success_rate": 0.7
+  },
+  "stages": {
+    "1": {
+      "_route": "큰 저그, 수직벽, 사다리형 간격",
+      "groups": { "efficiency": 0.1, "joint": 0.1, "smooth": 0.1, "contact": 0.0 },
+      "fatigue": false
+    },
+    "2": {
+      "_route": "다양한 홀드 간격, 약한 경사",
+      "groups": { "efficiency": 0.5, "smooth": 0.5, "joint": 0.5, "contact": 1.0 },
+      "fatigue": false
+    },
+    "3": {
+      "_route": "작은 홀드(크림프, 슬로퍼), 오버행",
+      "groups": {},
+      "fatigue": true
+    },
+    "4": {
+      "_route": "랜덤 생성 루트, 다이노 필요 구간",
+      "groups": {},
+      "fatigue": true,
+      "params": { "precise_dyno": true },
+      "domain_randomization": true
+    }
+  }
+}
