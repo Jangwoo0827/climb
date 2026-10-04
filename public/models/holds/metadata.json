@@ -1,1 +1,25 @@
-{"tfjsVersion": "1.7.4", "tmVersion": "2.4.17", "packageVersion": "0.8.4-alpha2", "packageName": "@teachablemachine/image", "timeStamp": "2026-10-03T11:22:55.206Z", "userMetadata": {}, "modelName": "tm-my-image-model", "labels": ["pinch", "jug", "crimp", "volume", "pocket", "sloper"], "imageSize": 224, "crop": "tight"}
+{
+ "format": "onnx",
+ "labels": [
+  "crimp",
+  "jug",
+  "pinch",
+  "pocket",
+  "sloper"
+ ],
+ "imageSize": 224,
+ "crop": "tight",
+ "mean": [
+  0.485,
+  0.456,
+  0.406
+ ],
+ "std": [
+  0.229,
+  0.224,
+  0.225
+ ],
+ "source": "experiment_009",
+ "arch": "mobilenet_v3_large",
+ "data": "holds_cht"
+}

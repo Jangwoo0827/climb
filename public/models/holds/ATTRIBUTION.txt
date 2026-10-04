@@ -1,12 +1,3 @@
-홀드 종류 분류 모델 (Teachable Machine, TensorFlow.js)
-클래스: crimp, pinch, jug, pocket, sloper, volume
-
-학습 데이터:
-- "hold classification" by Capstone, Roboflow Universe, CC BY 4.0
-  https://universe.roboflow.com/capstone-kz2o9/hold-classification
-  (홀드 상자를 잘라 224x224로 만들어 사용)
-- volume: 따로 모은 볼륨 사진(흰 배경은 위 데이터셋의 벽 조각으로 교체)
-
-학습: 홀드 상자(여유 5%)만 잘라 회색 바탕에 놓음(옆 홀드가 섞이지 않게), 종류별 최대 60장(crimp 125→60, pinch 74→60)
-테스트 정확도: 65.5% (따로 빼둔 58장 중 38장), 종류별 평균 67.3%
-이전 모델: 1차 67.2%/평균 64.7%(넓게 자름), 2차 65.5%/평균 65.0%(크림프 줄임)
+ClinbingHoldType Dataset by Personal, Roboflow Universe, CC BY 4.0
+https://universe.roboflow.com/personal-9wu84/clinbingholdtype
++ hold classification (Capstone), Roboflow Universe, CC BY 4.0

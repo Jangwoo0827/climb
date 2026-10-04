@@ -15,7 +15,12 @@ export function loadHoldModel() {
         const meta = await (await fetch(`${BASE}metadata.json`)).json()
         if (meta.format === 'onnx') {
           const ort = await import('onnxruntime-web/wasm')
-          ort.env.wasm.wasmPaths = `${import.meta.env.BASE_URL}ort/` // wasm 파일은 앱에 같이 넣어 둠(오프라인에서도 동작)
+          // wasm 런타임 파일은 Vite가 앱에 같이 넣음(오프라인·Capacitor에서도 동작)
+          const [{ default: wasm }, { default: mjs }] = await Promise.all([
+            import('../../node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm?url'),
+            import('../../node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.mjs?url'),
+          ])
+          ort.env.wasm.wasmPaths = { wasm, mjs }
           ort.env.wasm.numThreads = 1
           const session = await ort.InferenceSession.create(`${BASE}model.onnx`)
           return { ort, session, labels: meta.labels, size: meta.imageSize ?? 224, crop: meta.crop ?? 'tight', mean: meta.mean, std: meta.std }
@@ -23,7 +28,8 @@ export function loadHoldModel() {
         const model = await tf.loadLayersModel(`${BASE}model.json`)
         // crop: 학습 사진을 자른 방식. 'tight' = 홀드 상자만 잘라 회색 바탕, 그 외(예전 모델) = 상자를 정사각형으로 넓혀 30% 여유
         return { model, labels: meta.labels, size: meta.imageSize ?? 224, crop: meta.crop ?? 'loose' }
-      } catch {
+      } catch (e) {
+        console.warn('홀드 분류 모델을 불러오지 못함', e)
         return null
       }
     })()
@@ -55,10 +61,14 @@ export async function classifyImages(images) {
 }
 
 // 한 장씩 판별함: Teachable Machine 모델은 여러 장을 한 번에 넣으면 사진끼리 섞인 결과가 나옴
+// 홀드 하나 분류할 때마다 화면(애니메이션·터치)에 차례를 넘겨, 홀드가 많아도 앱이 멈추지 않게 함
+const yieldToUi = () => new Promise((r) => setTimeout(r, 0))
+
 async function predict(m, canvases) {
   if (m.session) return predictOnnx(m, canvases)
   const out = []
   for (const c of canvases) {
+    await yieldToUi()
     const x = toInput([c], m.size)
     const y = m.model.predict(x)
     const p = await y.data()
@@ -76,6 +86,7 @@ async function predictOnnx(m, canvases) {
   const S = m.size
   const out = []
   for (const c of canvases) {
+    await yieldToUi()
     const d = c.getContext('2d').getImageData(0, 0, S, S).data
     const x = new Float32Array(3 * S * S)
     for (let i = 0; i < S * S; i++) for (let ch = 0; ch < 3; ch++) x[ch * S * S + i] = (d[i * 4 + ch] / 255 - m.mean[ch]) / m.std[ch]
