@@ -9,3 +9,5 @@ dataset/raw_*/
 dataset/holds_*/
 rl/demo_log_*.csv
 __pycache__/
+experiments/*/model.pt
+experiments/*/model.onnx

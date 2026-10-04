@@ -1,0 +1,122 @@
+{
+ "accuracy": 0.7114,
+ "macro_precision": 0.755,
+ "macro_recall": 0.7584,
+ "macro_f1": 0.7452,
+ "test_total": 1320,
+ "per_class": {
+  "crimp": {
+   "precision": 0.56,
+   "recall": 0.752,
+   "f1": 0.642,
+   "test_count": 303
+  },
+  "jug": {
+   "precision": 0.658,
+   "recall": 0.569,
+   "f1": 0.61,
+   "test_count": 318
+  },
+  "pinch": {
+   "precision": 0.78,
+   "recall": 0.451,
+   "f1": 0.571,
+   "test_count": 244
+  },
+  "pocket": {
+   "precision": 0.784,
+   "recall": 0.928,
+   "f1": 0.85,
+   "test_count": 125
+  },
+  "sloper": {
+   "precision": 0.808,
+   "recall": 0.85,
+   "f1": 0.828,
+   "test_count": 173
+  },
+  "volume": {
+   "precision": 0.94,
+   "recall": 1.0,
+   "f1": 0.969,
+   "test_count": 157
+  }
+ },
+ "confusion_matrix": {
+  "labels": [
+   "crimp",
+   "jug",
+   "pinch",
+   "pocket",
+   "sloper",
+   "volume"
+  ],
+  "rows_true_cols_pred": [
+   [
+    228,
+    45,
+    10,
+    10,
+    6,
+    4
+   ],
+   [
+    90,
+    181,
+    20,
+    9,
+    18,
+    0
+   ],
+   [
+    79,
+    39,
+    110,
+    3,
+    9,
+    4
+   ],
+   [
+    5,
+    2,
+    0,
+    116,
+    2,
+    0
+   ],
+   [
+    5,
+    8,
+    1,
+    10,
+    147,
+    2
+   ],
+   [
+    0,
+    0,
+    0,
+    0,
+    0,
+    157
+   ]
+  ]
+ },
+ "by_origin": {
+  "capstone": {
+   "n": 55,
+   "accuracy": 0.6545,
+   "macro_f1": 0.6806
+  },
+  "extra": {
+   "n": 7,
+   "accuracy": 1.0,
+   "macro_f1": 1.0
+  },
+  "holdclassificatore": {
+   "n": 1258,
+   "accuracy": 0.7122,
+   "macro_f1": 0.7459
+  }
+ }
+}

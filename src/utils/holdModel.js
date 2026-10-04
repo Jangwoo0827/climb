@@ -1,5 +1,7 @@
-// Teachable Machine으로 학습한 홀드 종류 분류 모델(public/models/holds)을 브라우저에서 돌린다.
+// 홀드 종류 분류 모델(public/models/holds)을 브라우저에서 돌린다.
 // 사진에서 찾은 홀드를 하나씩 정사각형으로 잘라 224x224로 맞춘 뒤 분류한다(학습 데이터를 만든 방식과 같게).
+// 두 형식을 지원: metadata.format === 'onnx' 이면 PyTorch에서 내보낸 ONNX(onnxruntime-web, ImageNet 정규화),
+// 아니면 Teachable Machine(TF.js, -1~1 정규화). Teachable Machine baseline은 models/holds_tm 에 보존.
 import * as tf from '@tensorflow/tfjs'
 
 const BASE = `${import.meta.env.BASE_URL}models/holds/`
@@ -11,6 +13,13 @@ export function loadHoldModel() {
     loading = (async () => {
       try {
         const meta = await (await fetch(`${BASE}metadata.json`)).json()
+        if (meta.format === 'onnx') {
+          const ort = await import('onnxruntime-web/wasm')
+          ort.env.wasm.wasmPaths = `${import.meta.env.BASE_URL}ort/` // wasm 파일은 앱에 같이 넣어 둠(오프라인에서도 동작)
+          ort.env.wasm.numThreads = 1
+          const session = await ort.InferenceSession.create(`${BASE}model.onnx`)
+          return { ort, session, labels: meta.labels, size: meta.imageSize ?? 224, crop: meta.crop ?? 'tight', mean: meta.mean, std: meta.std }
+        }
         const model = await tf.loadLayersModel(`${BASE}model.json`)
         // crop: 학습 사진을 자른 방식. 'tight' = 홀드 상자만 잘라 회색 바탕, 그 외(예전 모델) = 상자를 정사각형으로 넓혀 30% 여유
         return { model, labels: meta.labels, size: meta.imageSize ?? 224, crop: meta.crop ?? 'loose' }
@@ -47,6 +56,7 @@ export async function classifyImages(images) {
 
 // 한 장씩 판별함: Teachable Machine 모델은 여러 장을 한 번에 넣으면 사진끼리 섞인 결과가 나옴
 async function predict(m, canvases) {
+  if (m.session) return predictOnnx(m, canvases)
   const out = []
   for (const c of canvases) {
     const x = toInput([c], m.size)
@@ -54,6 +64,27 @@ async function predict(m, canvases) {
     const p = await y.data()
     x.dispose()
     y.dispose()
+    let k = 0
+    for (let j = 1; j < p.length; j++) if (p[j] > p[k]) k = j
+    out.push({ label: m.labels[k], prob: p[k], probs: Object.fromEntries(m.labels.map((l, j) => [l, p[j]])) })
+  }
+  return out
+}
+
+// ONNX(PyTorch) 모델: 픽셀을 0~1로 바꾼 뒤 ImageNet 평균·표준편차로 정규화, NCHW 순서
+async function predictOnnx(m, canvases) {
+  const S = m.size
+  const out = []
+  for (const c of canvases) {
+    const d = c.getContext('2d').getImageData(0, 0, S, S).data
+    const x = new Float32Array(3 * S * S)
+    for (let i = 0; i < S * S; i++) for (let ch = 0; ch < 3; ch++) x[ch * S * S + i] = (d[i * 4 + ch] / 255 - m.mean[ch]) / m.std[ch]
+    const res = await m.session.run({ [m.session.inputNames[0]]: new m.ort.Tensor('float32', x, [1, 3, S, S]) })
+    const logits = res[m.session.outputNames[0]].data
+    const mx = Math.max(...logits)
+    const e = Array.from(logits, (v) => Math.exp(v - mx))
+    const z = e.reduce((a, b) => a + b, 0)
+    const p = e.map((v) => v / z)
     let k = 0
     for (let j = 1; j < p.length; j++) if (p[j] > p[k]) k = j
     out.push({ label: m.labels[k], prob: p[k], probs: Object.fromEntries(m.labels.map((l, j) => [l, p[j]])) })

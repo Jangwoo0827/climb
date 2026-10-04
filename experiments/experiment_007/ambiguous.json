@@ -1,0 +1,376 @@
+[
+ {
+  "file": "sloper/train_C9896E97-9461-47DB-97A7-405B4EA70D4E-L0-001_PNG.rf.b9f9c9f46b023e10f9b66c6875d0e39c_0.jpg",
+  "true": "sloper",
+  "pred": "crimp",
+  "top2": [
+   [
+    "crimp",
+    0.355
+   ],
+   [
+    "sloper",
+    0.346
+   ]
+  ],
+  "gap": 0.01,
+  "wrong": true
+ },
+ {
+  "file": "crimp/train_E276C093-F1D2-4FB5-8988-98DDA7B03663-L0-001_PNG.rf.ce40c654b2e9fdd7ffbcbaac86acd385_0.jpg",
+  "true": "crimp",
+  "pred": "jug",
+  "top2": [
+   [
+    "jug",
+    0.372
+   ],
+   [
+    "pinch",
+    0.277
+   ]
+  ],
+  "gap": 0.095,
+  "wrong": true
+ },
+ {
+  "file": "pinch/train_3D4DBA8D-9D67-4E47-9B36-1D4FFF185A81-L0-001_PNG.rf.4a8b275a588e3ac40ead69b2258e697f_0.jpg",
+  "true": "pinch",
+  "pred": "crimp",
+  "top2": [
+   [
+    "crimp",
+    0.43
+   ],
+   [
+    "pinch",
+    0.335
+   ]
+  ],
+  "gap": 0.095,
+  "wrong": true
+ },
+ {
+  "file": "crimp/train_352B5D4A-EF67-4018-9D56-7DD66414D40F-L0-001_PNG.rf.c32aa7a71237e3b1183091d0b3421ee7_0.jpg",
+  "true": "crimp",
+  "pred": "pinch",
+  "top2": [
+   [
+    "pinch",
+    0.46
+   ],
+   [
+    "crimp",
+    0.349
+   ]
+  ],
+  "gap": 0.111,
+  "wrong": true
+ },
+ {
+  "file": "jug/train_F9DF28F1-7E33-4F31-820D-B050F0EB79BA-L0-001_PNG.rf.acb0fb80994d1a91c42d8685c615eddf_0.jpg",
+  "true": "jug",
+  "pred": "crimp",
+  "top2": [
+   [
+    "crimp",
+    0.407
+   ],
+   [
+    "sloper",
+    0.267
+   ]
+  ],
+  "gap": 0.14,
+  "wrong": true
+ },
+ {
+  "file": "crimp/test_73D79CB0-CA0B-4FAF-8E80-1126A10736A3-L0-001_PNG.rf.efb3613bab890b0c25cccd9c4569a359_0.jpg",
+  "true": "crimp",
+  "pred": "pinch",
+  "top2": [
+   [
+    "pinch",
+    0.441
+   ],
+   [
+    "crimp",
+    0.266
+   ]
+  ],
+  "gap": 0.175,
+  "wrong": true
+ },
+ {
+  "file": "sloper/train_6E7E0283-2DE5-4E06-8F79-1B4A5D782028-L0-001_PNG.rf.54cc08a9bb80d9d4499b6d719dfc8e43_0.jpg",
+  "true": "sloper",
+  "pred": "crimp",
+  "top2": [
+   [
+    "crimp",
+    0.569
+   ],
+   [
+    "sloper",
+    0.289
+   ]
+  ],
+  "gap": 0.28,
+  "wrong": true
+ },
+ {
+  "file": "jug/train_C33EE21B-0B9A-4419-9E4B-856F4FA98244-L0-001_PNG.rf.17fb5c4f8c829ec23b987b2771a4f464_0.jpg",
+  "true": "jug",
+  "pred": "crimp",
+  "top2": [
+   [
+    "crimp",
+    0.522
+   ],
+   [
+    "pinch",
+    0.201
+   ]
+  ],
+  "gap": 0.322,
+  "wrong": true
+ },
+ {
+  "file": "crimp/valid_4744439B-09E2-4C01-A0FB-EE5DB45A2225-L0-001_PNG.rf.e0f8a96084235f5a6d0844c2b760b789_0.jpg",
+  "true": "crimp",
+  "pred": "jug",
+  "top2": [
+   [
+    "jug",
+    0.547
+   ],
+   [
+    "crimp",
+    0.214
+   ]
+  ],
+  "gap": 0.333,
+  "wrong": true
+ },
+ {
+  "file": "crimp/train_3C78429E-91A9-4879-A1C2-85D4008987A3-L0-001_PNG.rf.e2f89dc3731d6c5e68325d471f409261_0.jpg",
+  "true": "crimp",
+  "pred": "pinch",
+  "top2": [
+   [
+    "pinch",
+    0.634
+   ],
+   [
+    "crimp",
+    0.286
+   ]
+  ],
+  "gap": 0.349,
+  "wrong": true
+ },
+ {
+  "file": "sloper/valid_DE138A50-0E60-48BE-9F31-D9E20EBFE86A-L0-001_PNG.rf.24f4af0d34d2fe00b4cd4f771cdb2cfc_0.jpg",
+  "true": "sloper",
+  "pred": "crimp",
+  "top2": [
+   [
+    "crimp",
+    0.66
+   ],
+   [
+    "sloper",
+    0.284
+   ]
+  ],
+  "gap": 0.375,
+  "wrong": true
+ },
+ {
+  "file": "jug/train_BAE77746-F117-4D92-8963-6624E2300A5B-L0-001_PNG.rf.c782d0bcc26e0c20a9e31572c48b0940_0.jpg",
+  "true": "jug",
+  "pred": "crimp",
+  "top2": [
+   [
+    "crimp",
+    0.648
+   ],
+   [
+    "sloper",
+    0.144
+   ]
+  ],
+  "gap": 0.504,
+  "wrong": true
+ },
+ {
+  "file": "pinch/train_6D47CDF2-64F3-4CA9-AC7D-927F056451DC-L0-001_PNG.rf.143b953a6f11e9119cfc8d11ac33ee01_0.jpg",
+  "true": "pinch",
+  "pred": "crimp",
+  "top2": [
+   [
+    "crimp",
+    0.734
+   ],
+   [
+    "pinch",
+    0.207
+   ]
+  ],
+  "gap": 0.527,
+  "wrong": true
+ },
+ {
+  "file": "pinch/train_74DEAA94-9FB2-4655-9C89-C3B92959731D-L0-001_PNG.rf.19e30e6263a9b3ff3e65c72304746733_0.jpg",
+  "true": "pinch",
+  "pred": "crimp",
+  "top2": [
+   [
+    "crimp",
+    0.73
+   ],
+   [
+    "sloper",
+    0.13
+   ]
+  ],
+  "gap": 0.6,
+  "wrong": true
+ },
+ {
+  "file": "jug/train_4FC759B7-8FEA-4A6C-B4B3-85F35C2A3380-L0-001_PNG.rf.d1d5678d5dc003fbdcd9eda0072b50c8_0.jpg",
+  "true": "jug",
+  "pred": "crimp",
+  "top2": [
+   [
+    "crimp",
+    0.781
+   ],
+   [
+    "sloper",
+    0.159
+   ]
+  ],
+  "gap": 0.623,
+  "wrong": true
+ },
+ {
+  "file": "pinch/train_A4CE302A-303B-4689-9708-E780EFC9AB72-L0-001_PNG.rf.e470228339602bf1e40473636cf389ae_0.jpg",
+  "true": "pinch",
+  "pred": "crimp",
+  "top2": [
+   [
+    "crimp",
+    0.787
+   ],
+   [
+    "pinch",
+    0.114
+   ]
+  ],
+  "gap": 0.673,
+  "wrong": true
+ },
+ {
+  "file": "pinch/valid_1A7B84DB-285E-4F67-88E0-AED5E84819C0-L0-001_PNG.rf.c1d6e0f640604d2143f104a26bc5b4cb_0.jpg",
+  "true": "pinch",
+  "pred": "crimp",
+  "top2": [
+   [
+    "crimp",
+    0.921
+   ],
+   [
+    "pinch",
+    0.028
+   ]
+  ],
+  "gap": 0.893,
+  "wrong": true
+ },
+ {
+  "file": "jug/test_EFC6F937-808F-45AE-AB75-DC1D59A479B2-L0-001_PNG.rf.847e26c4bb44e9537751e5d0fc198999_0.jpg",
+  "true": "jug",
+  "pred": "jug",
+  "top2": [
+   [
+    "jug",
+    0.35
+   ],
+   [
+    "pinch",
+    0.338
+   ]
+  ],
+  "gap": 0.013,
+  "wrong": false
+ },
+ {
+  "file": "jug/train_5156E9A1-FAE9-46C3-B9CB-3410ED7BC75C-L0-001_PNG.rf.2088d74d1654a7d7f2b4805cfbfb4c72_0.jpg",
+  "true": "jug",
+  "pred": "jug",
+  "top2": [
+   [
+    "jug",
+    0.274
+   ],
+   [
+    "crimp",
+    0.262
+   ]
+  ],
+  "gap": 0.013,
+  "wrong": false
+ },
+ {
+  "file": "pinch/valid_78A3A07F-DF75-4257-B5E8-9C5D2E78862B-L0-001_PNG.rf.c1d3d0618f3af1a0d79d8f76f8b8a50c_0.jpg",
+  "true": "pinch",
+  "pred": "pinch",
+  "top2": [
+   [
+    "pinch",
+    0.539
+   ],
+   [
+    "crimp",
+    0.412
+   ]
+  ],
+  "gap": 0.127,
+  "wrong": false
+ },
+ {
+  "file": "pinch/train_A6C45277-E907-495C-8CE6-DBC68B7A3BE6-L0-001_PNG.rf.6c59f5a04ac07e34f0432ffa8a8cbbae_0.jpg",
+  "true": "pinch",
+  "pred": "pinch",
+  "top2": [
+   [
+    "pinch",
+    0.504
+   ],
+   [
+    "crimp",
+    0.369
+   ]
+  ],
+  "gap": 0.135,
+  "wrong": false
+ },
+ {
+  "file": "sloper/train_AA85F6BA-4F1F-454E-A45C-D0CAEAF1D0BC-L0-001_PNG.rf.4c867fa597538672c0e4f1054866c447_0.jpg",
+  "true": "sloper",
+  "pred": "sloper",
+  "top2": [
+   [
+    "sloper",
+    0.562
+   ],
+   [
+    "crimp",
+    0.394
+   ]
+  ],
+  "gap": 0.168,
+  "wrong": false
+ }
+]

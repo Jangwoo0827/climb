@@ -1,0 +1,308 @@
+[
+ {
+  "file": "jug/train_F9DF28F1-7E33-4F31-820D-B050F0EB79BA-L0-001_PNG.rf.acb0fb80994d1a91c42d8685c615eddf_0.jpg",
+  "true": "jug",
+  "pred": "pinch",
+  "top2": [
+   [
+    "pinch",
+    0.386
+   ],
+   [
+    "crimp",
+    0.383
+   ]
+  ],
+  "gap": 0.004,
+  "wrong": true
+ },
+ {
+  "file": "jug/train_5156E9A1-FAE9-46C3-B9CB-3410ED7BC75C-L0-001_PNG.rf.2088d74d1654a7d7f2b4805cfbfb4c72_0.jpg",
+  "true": "jug",
+  "pred": "pinch",
+  "top2": [
+   [
+    "pinch",
+    0.336
+   ],
+   [
+    "crimp",
+    0.296
+   ]
+  ],
+  "gap": 0.04,
+  "wrong": true
+ },
+ {
+  "file": "pinch/train_3D4DBA8D-9D67-4E47-9B36-1D4FFF185A81-L0-001_PNG.rf.4a8b275a588e3ac40ead69b2258e697f_0.jpg",
+  "true": "pinch",
+  "pred": "crimp",
+  "top2": [
+   [
+    "crimp",
+    0.507
+   ],
+   [
+    "pinch",
+    0.389
+   ]
+  ],
+  "gap": 0.118,
+  "wrong": true
+ },
+ {
+  "file": "jug/train_7DFB941E-E052-40E0-B21C-BDE4013373CF-L0-001_PNG.rf.4418ea6c42b9219a38eb0a99aed5c03e_0.jpg",
+  "true": "jug",
+  "pred": "pinch",
+  "top2": [
+   [
+    "pinch",
+    0.538
+   ],
+   [
+    "jug",
+    0.403
+   ]
+  ],
+  "gap": 0.134,
+  "wrong": true
+ },
+ {
+  "file": "pinch/train_6D47CDF2-64F3-4CA9-AC7D-927F056451DC-L0-001_PNG.rf.143b953a6f11e9119cfc8d11ac33ee01_0.jpg",
+  "true": "pinch",
+  "pred": "crimp",
+  "top2": [
+   [
+    "crimp",
+    0.566
+   ],
+   [
+    "pinch",
+    0.33
+   ]
+  ],
+  "gap": 0.236,
+  "wrong": true
+ },
+ {
+  "file": "pinch/train_74DEAA94-9FB2-4655-9C89-C3B92959731D-L0-001_PNG.rf.19e30e6263a9b3ff3e65c72304746733_0.jpg",
+  "true": "pinch",
+  "pred": "crimp",
+  "top2": [
+   [
+    "crimp",
+    0.587
+   ],
+   [
+    "pinch",
+    0.338
+   ]
+  ],
+  "gap": 0.25,
+  "wrong": true
+ },
+ {
+  "file": "pinch/train_A4CE302A-303B-4689-9708-E780EFC9AB72-L0-001_PNG.rf.e470228339602bf1e40473636cf389ae_0.jpg",
+  "true": "pinch",
+  "pred": "crimp",
+  "top2": [
+   [
+    "crimp",
+    0.584
+   ],
+   [
+    "pinch",
+    0.318
+   ]
+  ],
+  "gap": 0.265,
+  "wrong": true
+ },
+ {
+  "file": "crimp/train_E276C093-F1D2-4FB5-8988-98DDA7B03663-L0-001_PNG.rf.ce40c654b2e9fdd7ffbcbaac86acd385_0.jpg",
+  "true": "crimp",
+  "pred": "pinch",
+  "top2": [
+   [
+    "pinch",
+    0.626
+   ],
+   [
+    "crimp",
+    0.242
+   ]
+  ],
+  "gap": 0.384,
+  "wrong": true
+ },
+ {
+  "file": "crimp/valid_4744439B-09E2-4C01-A0FB-EE5DB45A2225-L0-001_PNG.rf.e0f8a96084235f5a6d0844c2b760b789_0.jpg",
+  "true": "crimp",
+  "pred": "jug",
+  "top2": [
+   [
+    "jug",
+    0.588
+   ],
+   [
+    "crimp",
+    0.186
+   ]
+  ],
+  "gap": 0.402,
+  "wrong": true
+ },
+ {
+  "file": "jug/test_EFC6F937-808F-45AE-AB75-DC1D59A479B2-L0-001_PNG.rf.847e26c4bb44e9537751e5d0fc198999_0.jpg",
+  "true": "jug",
+  "pred": "pinch",
+  "top2": [
+   [
+    "pinch",
+    0.674
+   ],
+   [
+    "jug",
+    0.249
+   ]
+  ],
+  "gap": 0.425,
+  "wrong": true
+ },
+ {
+  "file": "jug/train_C33EE21B-0B9A-4419-9E4B-856F4FA98244-L0-001_PNG.rf.17fb5c4f8c829ec23b987b2771a4f464_0.jpg",
+  "true": "jug",
+  "pred": "crimp",
+  "top2": [
+   [
+    "crimp",
+    0.646
+   ],
+   [
+    "pinch",
+    0.209
+   ]
+  ],
+  "gap": 0.437,
+  "wrong": true
+ },
+ {
+  "file": "jug/train_BAE77746-F117-4D92-8963-6624E2300A5B-L0-001_PNG.rf.c782d0bcc26e0c20a9e31572c48b0940_0.jpg",
+  "true": "jug",
+  "pred": "crimp",
+  "top2": [
+   [
+    "crimp",
+    0.657
+   ],
+   [
+    "jug",
+    0.171
+   ]
+  ],
+  "gap": 0.486,
+  "wrong": true
+ },
+ {
+  "file": "crimp/train_352B5D4A-EF67-4018-9D56-7DD66414D40F-L0-001_PNG.rf.c32aa7a71237e3b1183091d0b3421ee7_0.jpg",
+  "true": "crimp",
+  "pred": "pinch",
+  "top2": [
+   [
+    "pinch",
+    0.741
+   ],
+   [
+    "crimp",
+    0.225
+   ]
+  ],
+  "gap": 0.516,
+  "wrong": true
+ },
+ {
+  "file": "crimp/train_3C78429E-91A9-4879-A1C2-85D4008987A3-L0-001_PNG.rf.e2f89dc3731d6c5e68325d471f409261_0.jpg",
+  "true": "crimp",
+  "pred": "pinch",
+  "top2": [
+   [
+    "pinch",
+    0.811
+   ],
+   [
+    "crimp",
+    0.161
+   ]
+  ],
+  "gap": 0.65,
+  "wrong": true
+ },
+ {
+  "file": "jug/train_4FC759B7-8FEA-4A6C-B4B3-85F35C2A3380-L0-001_PNG.rf.d1d5678d5dc003fbdcd9eda0072b50c8_0.jpg",
+  "true": "jug",
+  "pred": "crimp",
+  "top2": [
+   [
+    "crimp",
+    0.853
+   ],
+   [
+    "jug",
+    0.072
+   ]
+  ],
+  "gap": 0.781,
+  "wrong": true
+ },
+ {
+  "file": "crimp/test_73D79CB0-CA0B-4FAF-8E80-1126A10736A3-L0-001_PNG.rf.efb3613bab890b0c25cccd9c4569a359_0.jpg",
+  "true": "crimp",
+  "pred": "pinch",
+  "top2": [
+   [
+    "pinch",
+    0.9
+   ],
+   [
+    "crimp",
+    0.048
+   ]
+  ],
+  "gap": 0.852,
+  "wrong": true
+ },
+ {
+  "file": "pinch/valid_1A7B84DB-285E-4F67-88E0-AED5E84819C0-L0-001_PNG.rf.c1d6e0f640604d2143f104a26bc5b4cb_0.jpg",
+  "true": "pinch",
+  "pred": "crimp",
+  "top2": [
+   [
+    "crimp",
+    0.918
+   ],
+   [
+    "pinch",
+    0.034
+   ]
+  ],
+  "gap": 0.884,
+  "wrong": true
+ },
+ {
+  "file": "pocket/test_864506F2-5E99-4B98-90B5-00236035F11A-L0-001_PNG.rf.e1fc2bc5bcba5a377ff36136343ac05a_0.jpg",
+  "true": "pocket",
+  "pred": "pocket",
+  "top2": [
+   [
+    "pocket",
+    0.407
+   ],
+   [
+    "crimp",
+    0.312
+   ]
+  ],
+  "gap": 0.095,
+  "wrong": false
+ }
+]
