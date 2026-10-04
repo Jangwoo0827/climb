@@ -63,6 +63,19 @@ const FOOT_CLEAR = 0.1 // 등반이 시작되면 발은 바닥에 닿지 않고 
 
 // holds: 미터 단위 홀드, body: bodyModel 결과, heightM: 키(m)
 // 자세 계산기: solve(손 홀드 → 몸 위치·발), pose(그리기용 관절), jumpPose(점프 공중 자세)
+// 무릎 위치: 원래 고르는 쪽이 손(높은 손)보다 위로 올라가면, 엉덩이-발 선 반대쪽 해(무릎을 옆·아래로)를 씀
+function kneeAt(hipP, foot, l, side, down, maxY) {
+  const k = joint(hipP, foot, l, l, side, null, down)
+  if (k.y <= maxY) return k
+  const vx = foot.x - hipP.x
+  const vy = foot.y - hipP.y
+  const L = vx * vx + vy * vy || 1e-9
+  const t = ((k.x - hipP.x) * vx + (k.y - hipP.y) * vy) / L
+  const b = { x: hipP.x + vx * t, y: hipP.y + vy * t }
+  const m = { x: 2 * b.x - k.x, y: 2 * b.y - k.y }
+  return m.y < k.y ? m : k
+}
+
 function makeSolver(holds, body, heightM) {
   const sw = 0.23 * heightM // 어깨너비
   const arm = Math.max(0.3, (body.span - sw) / 2) // 팔 전체 길이
@@ -280,6 +293,15 @@ function makeSolver(holds, body, heightM) {
             if (h.y < S.y) cost += ((S.y - h.y) / arm) ** 2 * 6 // 손이 어깨 아래면 몸을 낮춰 손을 어깨 높이 근처로
           }
 
+          // 무릎이 두 손보다 위로 올라가는(스파이더맨) 자세는 쓰지 않음
+          {
+            const top = Math.max(hl.y, hr.y)
+            const [fa, fb] = f1.p.x <= f2.p.x ? [f1, f2] : [f2, f1]
+            const kd = sit ? -0.6 : 0.05
+            const kl = kneeAt({ x: hip.x - 0.05 * heightM, y: hip.y }, fa.p, leg / 2, -1, kd, top)
+            const kr = kneeAt({ x: hip.x + 0.05 * heightM, y: hip.y }, fb.p, leg / 2, 1, kd, top)
+            if (Math.max(kl.y, kr.y) > top + 0.02) reachOk = false
+          }
           // 두 팔이 서로 겹치는(교차하는) 자세는 쓰지 않음
           if (armSegs[0].some(([a, b]) => armSegs[1].some(([c, d]) => segCross(a, b, c, d)))) reachOk = false
           // 발이 체중을 거의 못 받는데(벽 밀기·옆으로 뻗은 다리) 팔을 크게 굽혀 매달리는 자세는 비현실적 근력 → 쓰지 않음(완화 단계와 맨틀 제외)
@@ -362,8 +384,9 @@ function makeSolver(holds, body, heightM) {
       hip,
       hipL,
       hipR,
-      kneeL: joint(hipL, footL.p, leg / 2, leg / 2, dropSide === 'L' ? 1 : -1, null, s.sit ? -0.6 : 0.05), // 싯 스타트는 무릎을 위로
-      kneeR: joint(hipR, footR.p, leg / 2, leg / 2, dropSide === 'R' ? -1 : 1, null, s.sit ? -0.6 : 0.05),
+      // 싯 스타트는 무릎을 위로, 단 손보다 위로는 올리지 않음
+      kneeL: kneeAt(hipL, footL.p, leg / 2, dropSide === 'L' ? 1 : -1, s.sit ? -0.6 : 0.05, Math.max(hl.y, hr.y)),
+      kneeR: kneeAt(hipR, footR.p, leg / 2, dropSide === 'R' ? -1 : 1, s.sit ? -0.6 : 0.05, Math.max(hl.y, hr.y)),
       footL: footL.p,
       footR: footR.p,
       // 어깨선의 중심에서 엉덩이로 이어지는 몸통 (그리기용)

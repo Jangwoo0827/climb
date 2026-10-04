@@ -93,6 +93,8 @@ for (const [name, sc] of Object.entries(scenes).filter(([n]) => !process.env.SCE
                 const legs = sh2(p.footL, fig.feetInfo[0]) + sh2(p.footR, fig.feetInfo[1])
                 if (legs < 0.35 && Math.max(fl(p.shL, p.elL, p.hl), fl(p.shR, p.elR, p.hr)) > 60 && fig.move !== 'mantle' && !sitStartEarly) { floatBent++; issues.push('발 지지 약한데 팔 굽혀 매달림') } // 싯 스타트 구간은 발이 엉덩이 높이라 하중 어림이 맞지 않아 제외
               }
+              // 무릎이 두 손보다 위(스파이더맨 자세)
+              if (Math.max(p.kneeL.y, p.kneeR.y) > Math.max(p.hl.y, p.hr.y) + 0.02) issues.push('무릎이 손보다 위')
               const onHold = fig.feetInfo.filter((f) => f.id !== null).length
               if (onHold === 0) smearBoth++
               if (fm) footMatch++
