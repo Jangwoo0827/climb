@@ -19,7 +19,7 @@
   0.224,
   0.225
  ],
- "source": "experiment_009",
- "arch": "mobilenet_v3_large",
+ "source": "experiment_010",
+ "arch": "mobilenet_v3_small",
  "data": "holds_cht"
 }

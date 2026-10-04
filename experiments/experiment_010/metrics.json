@@ -1,0 +1,97 @@
+{
+ "accuracy": 0.6053,
+ "macro_precision": 0.6114,
+ "macro_recall": 0.6324,
+ "macro_f1": 0.6206,
+ "test_total": 228,
+ "per_class": {
+  "crimp": {
+   "precision": 0.7,
+   "recall": 0.653,
+   "f1": 0.676,
+   "test_count": 75
+  },
+  "jug": {
+   "precision": 0.5,
+   "recall": 0.471,
+   "f1": 0.485,
+   "test_count": 51
+  },
+  "pinch": {
+   "precision": 0.565,
+   "recall": 0.578,
+   "f1": 0.571,
+   "test_count": 45
+  },
+  "pocket": {
+   "precision": 0.792,
+   "recall": 0.905,
+   "f1": 0.844,
+   "test_count": 21
+  },
+  "sloper": {
+   "precision": 0.5,
+   "recall": 0.556,
+   "f1": 0.526,
+   "test_count": 36
+  }
+ },
+ "confusion_matrix": {
+  "labels": [
+   "crimp",
+   "jug",
+   "pinch",
+   "pocket",
+   "sloper"
+  ],
+  "rows_true_cols_pred": [
+   [
+    49,
+    12,
+    10,
+    0,
+    4
+   ],
+   [
+    10,
+    24,
+    6,
+    2,
+    9
+   ],
+   [
+    6,
+    5,
+    26,
+    1,
+    7
+   ],
+   [
+    0,
+    2,
+    0,
+    19,
+    0
+   ],
+   [
+    5,
+    5,
+    4,
+    2,
+    20
+   ]
+  ]
+ },
+ "by_origin": {
+  "capstone": {
+   "n": 55,
+   "accuracy": 0.7636,
+   "macro_f1": 0.7652
+  },
+  "cht": {
+   "n": 173,
+   "accuracy": 0.5549,
+   "macro_f1": 0.5751
+  }
+ }
+}
