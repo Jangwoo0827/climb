@@ -33,7 +33,9 @@ def source_of(fn):
     if stem.startswith('extra_'):
         return re.sub(r'_bg\d+$', '', stem)
     m = re.match(r'(train|valid|test)_(.+)_\d+$', stem)
-    return m.group(2) if m else stem
+    stem = m.group(2) if m else stem
+    hc = re.match(r'(hc_s\d+)t\d+$', stem)  # HoldClassificatore 원본 사진 묶음
+    return hc.group(1) if hc else stem
 
 
 items = []

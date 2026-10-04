@@ -32,6 +32,14 @@ metrics = {
     'per_class': per,
     'confusion_matrix': {'labels': labels, 'rows_true_cols_pred': cm.tolist()},
 }
+# 출처별(실제 사진 Capstone / 공개 데이터 등) 정확도와 macro F1
+by_origin = {}
+for org in sorted({i.get('origin', 'unknown') for i in pred['items']}):
+    yo = [i['true'] for i in pred['items'] if i.get('origin', 'unknown') == org]
+    po = [i['pred'] for i in pred['items'] if i.get('origin', 'unknown') == org]
+    _, _, fo, _ = precision_recall_fscore_support(yo, po, labels=sorted(set(yo)), zero_division=0)
+    by_origin[org] = {'n': len(yo), 'accuracy': round(accuracy_score(yo, po), 4), 'macro_f1': round(float(fo.mean()), 4)}
+metrics['by_origin'] = by_origin
 json.dump(metrics, open(os.path.join(d, 'metrics.json'), 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
 
 fig, ax = plt.subplots(figsize=(6.2, 5.4))
@@ -48,6 +56,8 @@ fig.tight_layout()
 fig.savefig(os.path.join(d, 'confusion_matrix.png'), dpi=120)
 
 print(f'{name}: 정확도 {acc:.1%}, macro F1 {F.mean():.3f}, 종류별 평균 정확도 {R.mean():.1%}')
+for org, v in by_origin.items():
+    print(f'  출처 {org}: {v["n"]}장, 정확도 {v["accuracy"]:.1%}, macro F1 {v["macro_f1"]:.3f}')
 print(f"{'종류':8s} {'정밀도':>6s} {'재현율':>6s} {'F1':>6s} {'테스트수':>6s}")
 for c in labels:
     v = per[c]

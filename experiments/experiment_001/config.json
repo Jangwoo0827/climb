@@ -1,0 +1,11 @@
+{
+ "name": "experiment_001",
+ "description": "현재 앱 모델(3차)을 새 통합 테스트로 평가 — 참고용",
+ "model": "public/models/holds (3차, Teachable Machine)",
+ "dataset": {
+  "test": "dataset/holds_public/test 1,320장 (capstone 55, extra 7, holdclassificatore 1,258)",
+  "split": "출처별·원본 사진 단위 85/15, 학습과 거의 같은 테스트 사진 제거"
+ },
+ "caution": "capstone·extra 점수는 무효: 이 모델은 예전(홀드 단위) 분할로 학습해 새 테스트의 상당수를 학습 때 봤음. holdclassificatore 점수만 유효(처음 보는 공개 데이터)",
+ "finding": "holdclassificatore(합성 배경 제품 사진)에서 23.0%: 대부분 volume으로 예측 → 실제 벽 사진과 사진 종류가 크게 다름"
+}

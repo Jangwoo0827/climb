@@ -17,6 +17,7 @@
   test/<종류>/*.jpg    ← 학습에 넣지 말고 정확도 확인용으로만 사용
   ATTRIBUTION.txt      ← 출처·라이선스 표기(CC BY 4.0은 출처 표기 필수)
 """
+import json
 import os
 import random
 from collections import Counter
@@ -27,9 +28,13 @@ from PIL import Image, ImageOps
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-RAW = os.path.join(ROOT, 'dataset', 'raw')
+RAW = os.path.join(ROOT, 'dataset', 'raw')  # Capstone 'hold classification' (CC BY 4.0)
+RAW_HC = os.path.join(ROOT, 'dataset', 'raw_hc_unique')  # HoldClassificatore v2.2 (CC BY 4.0), prepare_holdclassificatore.py로 정리한 것
+SOURCES = [s for s in (RAW, RAW_HC) if os.path.exists(os.path.join(s, 'data.yaml'))]  # 있는 것만 함께 사용
+if '--only' in sys.argv:  # 예: --only raw  (기존 데이터만으로 비교 실험할 때)
+    SOURCES = [s for s in SOURCES if os.path.basename(s) == sys.argv[sys.argv.index('--only') + 1]]
 EXTRA = os.path.join(ROOT, 'dataset', 'extra')  # 직접 찍은 사진: extra/<종류>/*.jpg (예: extra/volume/)
-OUT = os.path.join(ROOT, 'dataset', 'holds')
+OUT = os.path.join(ROOT, sys.argv[sys.argv.index('--out') + 1]) if '--out' in sys.argv else os.path.join(ROOT, 'dataset', 'holds')
 SIZE = 224  # Teachable Machine 입력 크기
 PAD = 0.05  # 상자 바깥 여유 5%: 옆 홀드가 섞이지 않게 상자 그대로 자르고 빈 곳은 회색으로 채움
 GRAY = (128, 128, 128)
@@ -123,43 +128,44 @@ def read_names(path):
 
 
 def main():
-    yaml = os.path.join(RAW, 'data.yaml')
-    if not os.path.exists(yaml):
+    if not SOURCES:
         sys.exit(f'data.yaml이 없어요. Roboflow에서 YOLOv8 형식으로 받아 {RAW} 에 풀어 주세요.')
-    names = read_names(yaml)
-    print('클래스:', names)
-
-    crops = {n: [] for n in names}
-    for split in ('train', 'valid', 'test'):
-        img_dir = os.path.join(RAW, split, 'images')
-        lbl_dir = os.path.join(RAW, split, 'labels')
-        if not os.path.isdir(img_dir):
-            continue
-        for fn in sorted(os.listdir(img_dir)):
-            stem = os.path.splitext(fn)[0]
-            lbl = os.path.join(lbl_dir, stem + '.txt')
-            if not os.path.exists(lbl):
+    crops = {}
+    for src_dir in SOURCES:
+        names = [n.lower() for n in read_names(os.path.join(src_dir, 'data.yaml'))]  # 클래스 이름은 소문자로 맞춤(Crimp → crimp)
+        print(os.path.basename(src_dir), '클래스:', names)
+        for n in names:
+            crops.setdefault(n, [])
+        for split in ('train', 'valid', 'test'):
+            img_dir = os.path.join(src_dir, split, 'images')
+            lbl_dir = os.path.join(src_dir, split, 'labels')
+            if not os.path.isdir(img_dir):
                 continue
-            im = ImageOps.exif_transpose(Image.open(os.path.join(img_dir, fn))).convert('RGB')
-            W, H = im.size
-            for k, line in enumerate(open(lbl, encoding='utf-8')):
-                parts = line.split()
-                if len(parts) < 5:
+            for fn in sorted(os.listdir(img_dir)):
+                stem = os.path.splitext(fn)[0]
+                lbl = os.path.join(lbl_dir, stem + '.txt')
+                if not os.path.exists(lbl):
                     continue
-                cls = names[int(parts[0])]
-                vals = [float(v) for v in parts[1:]]
-                if len(vals) == 4:  # 상자: cx cy w h (0~1)
-                    cx, cy, bw, bh = vals
-                else:  # 다각형(분할) 형식이면 꼭짓점을 감싸는 상자로
-                    xs, ys = vals[0::2], vals[1::2]
-                    cx, cy = (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2
-                    bw, bh = max(xs) - min(xs), max(ys) - min(ys)
-                pw, ph = bw * W * (1 + 2 * PAD), bh * H * (1 + 2 * PAD)
-                if max(pw, ph) < MIN_PX:
-                    continue
-                box = im.crop((round(cx * W - pw / 2), round(cy * H - ph / 2), round(cx * W + pw / 2), round(cy * H + ph / 2)))
-                crop = letterbox(box)
-                crops[cls].append((f'{split}_{stem}_{k}.jpg', crop))
+                im = ImageOps.exif_transpose(Image.open(os.path.join(img_dir, fn))).convert('RGB')
+                W, H = im.size
+                for k, line in enumerate(open(lbl, encoding='utf-8')):
+                    parts = line.split()
+                    if len(parts) < 5:
+                        continue
+                    cls = names[int(parts[0])]
+                    vals = [float(v) for v in parts[1:]]
+                    if len(vals) == 4:  # 상자: cx cy w h (0~1)
+                        cx, cy, bw, bh = vals
+                    else:  # 다각형(분할) 형식이면 꼭짓점을 감싸는 상자로
+                        xs, ys = vals[0::2], vals[1::2]
+                        cx, cy = (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2
+                        bw, bh = max(xs) - min(xs), max(ys) - min(ys)
+                    pw, ph = bw * W * (1 + 2 * PAD), bh * H * (1 + 2 * PAD)
+                    if max(pw, ph) < MIN_PX:
+                        continue
+                    box = im.crop((round(cx * W - pw / 2), round(cy * H - ph / 2), round(cx * W + pw / 2), round(cy * H + ph / 2)))
+                    crop = letterbox(box)
+                    crops[cls].append((f'{split}_{stem}_{k}.jpg', crop))
 
     # 직접 찍은 사진(extra/<종류>/): 가운데를 정사각형으로 잘라 같은 크기로
     bg_rand = random.Random(7)
@@ -210,7 +216,9 @@ def main():
         if stem.startswith('extra_'):
             return re.sub(r'_bg\d+$', '', stem)
         m = re.match(r'(train|valid|test)_(.+)_\d+$', stem)
-        return m.group(2) if m else stem
+        stem = m.group(2) if m else stem
+        hc = re.match(r'(hc_s\d+)t\d+$', stem)  # HoldClassificatore: 같은 원본 사진 묶음(s번호)은 한 덩어리로
+        return hc.group(1) if hc else stem
 
     seen_hash = set()
     dup = 0
@@ -225,25 +233,60 @@ def main():
                 continue
             seen_hash.add(h)
             by_src.setdefault(source_of(name), []).append((cls, name, img))
-    sources = sorted(by_src)
-    random.Random(42).shuffle(sources)
-    # 종류별로 테스트가 약 15%가 될 때까지 원본 사진을 통째로 테스트에 넣음
-    want = Counter(c for v in by_src.values() for c, _, _ in v)
-    got = Counter()
+    # 출처별로 따로 나눔: 공개 데이터를 넣든 빼든 기존 데이터(Capstone)의 학습/테스트가 똑같이 유지돼 공정하게 비교할 수 있음
+    def origin_of(src):
+        return 'holdclassificatore' if src.startswith('hc_') else 'extra' if src.startswith('extra_') else 'capstone'
+
     test_src = set()
-    for src in sources:
-        cls_here = Counter(c for c, _, _ in by_src[src])
-        if any(got[c] + n > max(1, round(want[c] * TEST_RATIO)) for c, n in cls_here.items()):
-            continue
-        test_src.add(src)
-        got.update(cls_here)
+    for org in ('capstone', 'extra', 'holdclassificatore'):
+        sources = sorted(sk for sk in by_src if origin_of(sk) == org)
+        random.Random(42).shuffle(sources)
+        # 종류별로 테스트가 약 15%가 될 때까지 원본 사진을 통째로 테스트에 넣음
+        want_o = Counter(c for sk in sources for c, _, _ in by_src[sk])
+        got = Counter()
+        for src in sources:
+            cls_here = Counter(c for c, _, _ in by_src[src])
+            if any(got[c] + n > max(1, round(want_o[c] * TEST_RATIO)) for c, n in cls_here.items()):
+                continue
+            test_src.add(src)
+            got.update(cls_here)
+    want = Counter(c for v in by_src.values() for c, _, _ in v)
     split = {'train': {}, 'test': {}}
-    for src in sources:
+    for src in sorted(by_src):
         part = 'test' if src in test_src else 'train'
         for cls, name, img in by_src[src]:
-            split[part].setdefault(cls, []).append((name, img))
+            split[part].setdefault(cls, []).append((name, img, origin_of(src)))
+
+    # 학습 사진과 거의 같은 테스트 사진(지각 해시 64비트 중 4비트 이하 차이)은 테스트에서 뺌: 같은 홀드 제품이 다른 사진에 또 찍힌 경우
+    def dh8(img):
+        g = img.convert('L').resize((9, 8), Image.LANCZOS).tobytes()
+        v = 0
+        for y in range(8):
+            for x in range(8):
+                v = (v << 1) | (g[y * 9 + x] > g[y * 9 + x + 1])
+        return v
+
+    bands = {}
+    for cls, items in split['train'].items():
+        for name, img, org in items:
+            h = dh8(img)
+            for band in range(8):
+                bands.setdefault((band, (h >> (band * 8)) & 0xFF), []).append(h)
+    near_removed = 0
+    for cls in list(split['test']):
+        kept_t = []
+        for name, img, org in split['test'][cls]:
+            h = dh8(img)
+            near = any(bin(h ^ o).count('1') <= 4 for band in range(8) for o in bands.get((band, (h >> (band * 8)) & 0xFF), []))
+            if near:
+                near_removed += 1
+            else:
+                kept_t.append((name, img, org))
+        split['test'][cls] = kept_t
+
     rnd = random.Random(42)
     total = {}
+    manifest = {'items': []}
     for cls in sorted(want):
         train = split['train'].get(cls, [])
         rnd.shuffle(train)
@@ -253,10 +296,15 @@ def main():
         for part, chunk in (('test', test), ('train', train)):
             d = os.path.join(OUT, part, cls)
             os.makedirs(d, exist_ok=True)
-            for name, img in chunk:
+            for name, img, org in chunk:
                 img.save(os.path.join(d, name), quality=90)
+                if part == 'test':
+                    manifest['items'].append({'file': f'{cls}/{name}', 'label': cls, 'origin': org})
         total[cls] = (len(train), len(test))
-    print(f'완전 중복으로 뺀 사진 {dup}장 · 테스트에 넣은 원본 사진 {len(test_src)}개(원본 단위로 나눠 누수 없음)')
+    json.dump(manifest, open(os.path.join(OUT, 'test_manifest.json'), 'w', encoding='utf-8'), ensure_ascii=False)
+    origins = Counter(i['origin'] for i in manifest['items'])
+    print(f'완전 중복으로 뺀 사진 {dup}장 · 테스트에 넣은 원본 사진 {len(test_src)}개(원본 단위로 나눠 누수 없음) · 학습과 거의 같아 테스트에서 뺀 사진 {near_removed}장')
+    print('테스트 출처별:', dict(origins))
 
     with open(os.path.join(OUT, 'ATTRIBUTION.txt'), 'w', encoding='utf-8') as f:
         f.write('이 폴더의 사진은 다음 데이터셋의 홀드 상자를 잘라 만든 것입니다.\n')
@@ -264,6 +312,9 @@ def main():
         f.write('https://universe.roboflow.com/capstone-kz2o9/hold-classification\n')
         f.write('License: CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)\n')
         f.write('변경 사항: 상자 영역(여유 5%)만 잘라 비율을 유지한 채 224x224 회색 바탕에 놓음, 종류별 폴더로 분류, 학습/테스트로 나눔\n')
+        if RAW_HC in SOURCES:
+            f.write('파일 이름에 _hc_ 가 들어간 사진: "HoldClassificatore_v2.2" by Climbing Holds Classification, Roboflow Universe, CC BY 4.0\n')
+            f.write('https://universe.roboflow.com/climbing-holds-classification/holdclassificatore_v2.2 (2x2 모자이크를 나누고 중복을 뺀 뒤 잘라 사용)\n')
         f.write('파일 이름이 extra_ 로 시작하는 사진은 따로 넣은 사진입니다(위 라이선스와 무관). 이름이 _bg0, _bg1 로 끝나면 흰 배경을 위 데이터셋의 벽 사진 조각으로 바꾼 것입니다.\n')
 
     print('\n종류별 사진 수 (학습 / 테스트):')
