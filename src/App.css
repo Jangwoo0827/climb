@@ -159,3 +159,5 @@ main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .side .pills { flex-wrap: wrap; overflow: visible; }
 
 @media (max-width: 480px) { .ver { display: none; } .tips ul { font-size: 12px; } .tips h3 { font-size: 13px; } }
+
+.sideview { display: block; height: 190px; max-width: 100%; margin: 0 auto; background: rgba(255, 255, 255, 0.03); border-radius: 8px; }

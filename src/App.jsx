@@ -4,6 +4,7 @@ import { FEET, HOLD_ORDER, HOLD_TYPES, MOVES, estimateHoldType } from './utils/g
 import { buildSequence } from './utils/stickman.js'
 import { blendPose, moversOf } from './utils/animate.js'
 import { TERM_NAMES, scoreFrames } from './utils/reward.js'
+import { pose3d, project } from './utils/depth.js'
 import { LEVELS, bodyModel, estimateGrade, findRoute, generateRoute, toMeters } from './utils/route.js'
 
 // 사진 없이 체험할 수 있는 데모 벽 (초록색 = 우리 루트, 나머지는 다른 루트)
@@ -36,38 +37,68 @@ function makeDemoWall() {
   return c
 }
 
-// 벽 사진 위에 그리는 졸라맨
-function Stickman({ p, sv, headR, hard, label, u }) {
-  const line = (pts) => pts.map(sv).join(' ')
+// 벽 사진 위에 그리는 졸라맨(2.5D): 벽에서 먼 부위는 살짝 비스듬히 옮기고 굵게, 벽 쪽 부위는 가늘게
+function Stickman({ p3, sv, headR, hard, label, u, heightM }) {
+  const P = Object.fromEntries(Object.entries(p3).map(([k, q]) => [k, project(q)]))
   const color = hard ? '#ff8a6b' : '#ffffff'
-  const limbs = [
-    [p.shL, p.elL, p.hl],
-    [p.shR, p.elR, p.hr],
-    [p.hipL, p.kneeL, p.footL],
-    [p.hipR, p.kneeR, p.footR],
+  const segs = [
+    ['shL', 'shR'], ['shL', 'hipL'], ['shR', 'hipR'], ['hipL', 'hipR'],
+    ['shL', 'elL'], ['elL', 'hl'], ['shR', 'elR'], ['elR', 'hr'],
+    ['hipL', 'kneeL'], ['kneeL', 'footL'], ['hipR', 'kneeR'], ['kneeR', 'footR'],
   ]
-  const halo = { fill: 'none', strokeLinecap: 'round', strokeLinejoin: 'round' }
-  const draw = (stroke, w) => (
-    <>
-      <polyline {...halo} stroke={stroke} strokeWidth={w} points={line([p.shL, p.shR])} />
-      {/* 몸통: 어깨 양쪽에서 같은 쪽 골반으로 이어 사다리꼴로 그림 */}
-      <polyline {...halo} stroke={stroke} strokeWidth={w} points={line([p.shL, p.hipL, p.hipR, p.shR])} />
-      <polyline {...halo} stroke={stroke} strokeWidth={w} points={line([p.hipL, p.hipR])} />
-      {limbs.map((l, i) => <polyline key={i} {...halo} stroke={stroke} strokeWidth={w} points={line(l)} />)}
-    </>
-  )
-  const [hx, hy] = sv(p.head).split(',')
+    .map(([a, b]) => ({ a, b, z: (p3[a].z + p3[b].z) / 2 }))
+    .sort((x, y) => x.z - y.z) // 벽 쪽(뒤)부터 그려 앞 부위가 위에 오게
+  const wOf = (z) => 1 + (z / heightM) * 2.2
+  const halo = { fill: 'none', strokeLinecap: 'round' }
+  const [hx, hy] = sv(P.head).split(',')
+  const hr = Math.max(headR, 8 * u) * wOf(p3.head.z) * 0.8
   return (
     <g>
-      {draw('rgba(0,0,0,0.6)', 7 * u)}
-      {draw(color, 4 * u)}
-      <circle cx={hx} cy={hy} r={Math.max(headR, 8 * u)} fill="rgba(0,0,0,0.45)" stroke={color} strokeWidth={4 * u} />
+      {segs.map((sg) => (
+        <g key={sg.a + sg.b}>
+          <polyline {...halo} stroke="rgba(0,0,0,0.6)" strokeWidth={7 * u * wOf(sg.z)} points={`${sv(P[sg.a])} ${sv(P[sg.b])}`} />
+          <polyline {...halo} stroke={color} strokeOpacity={0.75 + Math.min(0.25, sg.z / heightM)} strokeWidth={4 * u * wOf(sg.z)} points={`${sv(P[sg.a])} ${sv(P[sg.b])}`} />
+        </g>
+      ))}
+      <circle cx={hx} cy={hy} r={hr} fill="rgba(0,0,0,0.45)" stroke={color} strokeWidth={4 * u} />
       {label && (
-        <text x={Number(hx) + Math.max(headR, 8 * u) + 6 * u} y={Number(hy) + 6 * u} textAnchor="start" fontSize={17 * u} fontWeight="800" fill="#c77dff" stroke="#000" strokeWidth={3 * u} paintOrder="stroke">
+        <text x={Number(hx) + hr + 6 * u} y={Number(hy) + 6 * u} textAnchor="start" fontSize={17 * u} fontWeight="800" fill="#c77dff" stroke="#000" strokeWidth={3 * u} paintOrder="stroke">
           {label}
         </text>
       )}
     </g>
+  )
+}
+
+// 옆에서 본 모습: 왼쪽이 벽, 오른쪽이 벽 바깥. 홀드를 딛은 발과 벽을 미는 발(하늘색)이 구분돼 보임
+function SideView({ p3, feetInfo, heightM }) {
+  const H = 190
+  const ys = Object.values(p3).map((q) => q.y)
+  const lo = Math.max(0, Math.min(...ys) - 0.15)
+  const hi = Math.max(...ys) + 0.15
+  const sc = (H - 10) / (hi - lo)
+  const wallX = 18
+  const W = Math.max(110, wallX + 0.75 * sc + 10) // 벽에서 75cm까지 보이게(가로세로 같은 비율)
+  const X = (q) => wallX + q.z * sc
+  const Y = (q) => H - 5 - (q.y - lo) * sc
+  const pt = (q) => `${X(q).toFixed(1)},${Y(q).toFixed(1)}`
+  const side = (s) => [[s === 'L' ? 'shL' : 'shR', s === 'L' ? 'elL' : 'elR', s === 'L' ? 'hl' : 'hr'], [s === 'L' ? 'hipL' : 'hipR', s === 'L' ? 'kneeL' : 'kneeR', s === 'L' ? 'footL' : 'footR']]
+  const smear = (s) => feetInfo?.find((f) => f.side === s)?.id === null
+  return (
+    <svg className="sideview" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="옆에서 본 자세">
+      <rect x={0} y={0} width={wallX} height={H} fill="#3a4152" />
+      {lo <= 0.001 && <line x1={0} x2={W} y1={Y({ y: 0 })} y2={Y({ y: 0 })} stroke="#555" strokeWidth={2} />}
+      {['hl', 'hr'].map((k) => <circle key={k} cx={wallX} cy={Y(p3[k])} r={4} fill="#ffd400" />)}
+      {['L', 'R'].map((s) => !smear(s) && <circle key={s} cx={wallX} cy={Y(p3[s === 'L' ? 'footL' : 'footR'])} r={4} fill="#4dd0ff" />)}
+      {/* 먼 쪽(왼쪽 팔다리)은 흐리게, 가까운 쪽(오른쪽)은 진하게 */}
+      {['L', 'R'].map((s) => side(s).map((ch, i) => (
+        <polyline key={s + i} points={ch.map((k) => pt(p3[k])).join(' ')} fill="none" stroke={s === 'L' ? 'rgba(255,255,255,0.45)' : '#fff'} strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" />
+      )))}
+      <polyline points={[p3.neck, p3.hip].map(pt).join(' ')} fill="none" stroke="#fff" strokeWidth={3.5} strokeLinecap="round" />
+      <circle cx={X(p3.head)} cy={Y(p3.head)} r={0.06 * heightM * sc} fill="none" stroke="#fff" strokeWidth={2.5} />
+      {['L', 'R'].map((s) => smear(s) && <line key={'sm' + s} x1={wallX - 1} x2={wallX - 1} y1={Y(p3[s === 'L' ? 'footL' : 'footR']) - 6} y2={Y(p3[s === 'L' ? 'footL' : 'footR']) + 6} stroke="#4dd0ff" strokeWidth={3} strokeLinecap="round" />)}
+      <text x={W - 3} y={11} textAnchor="end" fontSize={10} fill="#9aa3b5">옆에서 본 모습</text>
+    </svg>
   )
 }
 
@@ -404,6 +435,7 @@ export default function App() {
     return order
   }, [plan, frames])
   const shownPose = useTweenPose(fig?.p ?? null)
+  const shown3 = useMemo(() => (shownPose && fig ? pose3d(shownPose, height / 100, fig.feetInfo) : null), [shownPose, fig, height])
   const [playing, setPlaying] = useState(false)
   // 재생: 처음부터 마지막 동작까지 자동으로 한 동작씩 넘김
   useEffect(() => {
@@ -527,7 +559,7 @@ export default function App() {
                       <line key={'sm' + f.side} x1={Number(sv(shownPose[f.side === 'L' ? 'footL' : 'footR']).split(',')[0]) - 10 * u} x2={Number(sv(shownPose[f.side === 'L' ? 'footL' : 'footR']).split(',')[0]) + 10 * u} y1={Number(sv(shownPose[f.side === 'L' ? 'footL' : 'footR']).split(',')[1]) + 4 * u} y2={Number(sv(shownPose[f.side === 'L' ? 'footL' : 'footR']).split(',')[1]) + 4 * u} stroke="#4dd0ff" strokeWidth={4 * u} strokeLinecap="round" />
                     ) : null,
                   )}
-                  {fig && shownPose && <Stickman p={shownPose} sv={sv} u={u} headR={0.06 * (height / 100) * k} hard={step?.hard} label={fig.airborne ? '점프!' : null} />}
+                  {fig && shown3 && <Stickman p3={shown3} sv={sv} u={u} heightM={height / 100} headR={0.06 * (height / 100) * k} hard={step?.hard} label={fig.airborne ? '점프!' : null} />}
                   {typedHolds.map((h, i) =>
                     h.type === 'volume' && h.extent ? (
                       <circle key={i} cx={h.x * photo.aspect} cy={h.y} r={Math.sqrt((h.size * photo.aspect) / Math.PI) * 0.85} fill="none" stroke="#b0e0ff" strokeWidth={2.5 * u} strokeDasharray={`${8 * u} ${5 * u}`} />
@@ -628,6 +660,7 @@ export default function App() {
                     </div>
                     <button className="nav" disabled={fi >= frames.length - 1} onClick={() => { setPlaying(false); setFrameIdx(fi + 1) }}>▶</button>
                   </div>
+                  {shown3 && <SideView p3={shown3} feetInfo={fig?.feetInfo} heightM={height / 100} />}
                   <div className="pills">
                     {moveKey && MOVES[moveKey] && (
                       <button className="pill move" onClick={() => openTerm('move', moveKey)}>동작 · {MOVES[moveKey].name}</button>
