@@ -561,4 +561,24 @@ export function detectVolumes(img, dbg) {
   return out
 }
 
+// 외부 검출기(Roboflow 등)가 준 홀드 상자 중 루트 색인 것만 고름: 상자 가운데 70% 안에서 그 색 픽셀이 25% 이상
+export function filterByTarget(img, holds, target, minFrac = 0.25) {
+  const { w, h } = img
+  return holds.filter((hd) => {
+    const b = hd.box
+    const cx = ((b.x0 + b.x1) / 2) * w
+    const cy = ((b.y0 + b.y1) / 2) * h
+    const rx = ((b.x1 - b.x0) / 2) * w * 0.7
+    const ry = ((b.y1 - b.y0) / 2) * h * 0.7
+    let n = 0
+    let m = 0
+    for (let y = Math.max(0, Math.round(cy - ry)); y <= Math.min(h - 1, Math.round(cy + ry)); y++)
+      for (let x = Math.max(0, Math.round(cx - rx)); x <= Math.min(w - 1, Math.round(cx + rx)); x++) {
+        n++
+        if (matches(img, y * w + x, target, 1)) m++
+      }
+    return n > 0 && m / n >= minFrac
+  })
+}
+
 export const __internals = { findBlobs, isHold, matches, polygonShape }

@@ -1,5 +1,6 @@
 import { Suspense, lazy, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { detectAllHolds, detectHolds, detectVolumes, pickTarget, sampleImage } from './utils/detect.js'
+import { detectAllHolds, detectHolds, detectVolumes, filterByTarget, pickTarget, sampleImage } from './utils/detect.js'
+import { detectHoldsCloud, getRfKey, setRfKey } from './utils/rfDetect.js'
 import { FEET, HOLD_ORDER, HOLD_TYPES, MOVES, estimateHoldType } from './utils/glossary.js'
 import { buildSequence } from './utils/stickman.js'
 import { blendPose, moversOf } from './utils/animate.js'
@@ -255,6 +256,10 @@ export default function App() {
   const [raw, setRaw] = useState(defaultBody) // 입력창에 적힌 글자 그대로(제한 없음)
   const [level, setLevel] = useState('beginner')
   const [photo, setPhoto] = useState(null) // {url, img, aspect}
+  // Roboflow 클라우드 홀드 검출: { status: 'loading' | 'ok' | 'off', holds }. 실패하거나 키가 없으면 색 검출만 씀
+  const [cloud, setCloud] = useState({ status: 'off', holds: [] })
+  const [rfKey, setRfKeyState] = useState(getRfKey)
+  const [holdsSrc, setHoldsSrc] = useState(null) // 'color' | 'cloud': 지금 루트 홀드를 어떤 검출로 만들었는지
   const [target, setTarget] = useState(null)
   const [holds, setHolds] = useState([])
   const [frameIdx, setFrameIdx] = useState(0) // 0=출발 자세, 이후 동작별 프레임(점프는 공중+착지 2프레임)
@@ -356,6 +361,37 @@ export default function App() {
     return out
   }, [typedHolds, normalSize])
 
+  // 루트 홀드: 클라우드 검출이 있으면 그 상자 중 루트 색인 것, 없으면 색 검출. 여기에 색과 상관없는 볼륨을 더함
+  // (실내 암장의 볼륨은 보통 모든 루트에서 쓸 수 있음)
+  const routeHolds = (t, cl) => {
+    const useCloud = cl.status === 'ok' && cl.holds.length > 0
+    const found = useCloud ? filterByTarget(photo.img, cl.holds, t) : detectHolds(photo.img, t)
+    setHoldsSrc(useCloud ? 'cloud' : 'color')
+    const vols = detectVolumes(photo.img).filter((v) => !found.some((f) => Math.hypot((f.x - v.x) * photo.aspect, f.y - v.y) < 0.04))
+    return [...found, ...vols]
+  }
+  // 사진을 열면 클라우드 검출을 시작(기다리는 동안에도 색 검출로 바로 쓸 수 있음)
+  useEffect(() => {
+    if (!photo) return
+    if (!import.meta.env.DEV && !rfKey) return setCloud({ status: 'off', holds: [] })
+    let cancelled = false
+    setCloud({ status: 'loading', holds: [] })
+    const im = new Image()
+    im.onload = async () => {
+      const hs = await detectHoldsCloud(im)
+      if (!cancelled) setCloud(hs ? { status: 'ok', holds: hs } : { status: 'off', holds: [] })
+    }
+    im.src = photo.url
+    return () => {
+      cancelled = true
+    }
+  }, [photo, rfKey])
+  // 색을 먼저 고른 뒤 클라우드 결과가 도착하면, 아직 색 검출 결과를 쓰고 있을 때 한 번 바꿈(직접 고친 홀드가 없을 때만)
+  useEffect(() => {
+    if (cloud.status === 'ok' && target && holdsSrc === 'color' && !holds.some((h) => h.type || h.role)) setHolds(routeHolds(target, cloud))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cloud])
+
   const onTap = (e) => {
     if (!photo) return
     const r = boxRef.current.getBoundingClientRect()
@@ -364,10 +400,7 @@ export default function App() {
     if (!target) {
       const t = pickTarget(photo.img, nx, ny)
       setTarget(t)
-      // 루트 색 홀드 + 색과 상관없는 볼륨(실내 암장의 볼륨은 보통 모든 루트에서 쓸 수 있음)
-      const found = detectHolds(photo.img, t)
-      const vols = detectVolumes(photo.img).filter((v) => !found.some((f) => Math.hypot((f.x - v.x) * photo.aspect, f.y - v.y) < 0.04))
-      setHolds([...found, ...vols])
+      setHolds(routeHolds(t, cloud))
       setFrameIdx(0)
       return
     }
@@ -407,7 +440,7 @@ export default function App() {
   )
 
   // 발 자유용: 사진 속 모든 색의 홀드(경로 홀드와 겹치는 것은 제외)
-  const allHolds = useMemo(() => (photo ? detectAllHolds(photo.img) : []), [photo])
+  const allHolds = useMemo(() => (photo ? (cloud.status === 'ok' && cloud.holds.length ? cloud.holds : detectAllHolds(photo.img)) : []), [photo, cloud])
   const footExtras = useMemo(() => {
     if (!feetFree || !photo) return []
     return allHolds
@@ -562,6 +595,11 @@ export default function App() {
       {tab === 'course' && (
         <main className="course">
           <div className="stage" ref={stageRef}>
+            {photo && (
+              <div className="detect-src" title="홀드 위치를 찾은 방법">
+                {cloud.status === 'loading' ? '☁️ AI 검출 중…' : holdsSrc === 'cloud' || (!target && cloud.status === 'ok') ? `☁️ AI 검출 ${cloud.holds.length}개` : '🎨 색 검출'}
+              </div>
+            )}
             {photo && fig && (
               <button className="view-toggle" onClick={() => setView3d(!view3d)}>{view3d ? '🖼 사진' : '🧊 3D'}</button>
             )}
@@ -790,6 +828,13 @@ export default function App() {
               <NumField label="팔 벌린 길이" unit="cm" value={raw.wingspan} onChange={(v) => setR('wingspan', v)} hint="양팔을 옆으로 벌린 끝~끝" />
               <NumField label="유연성" unit="점" value={raw.flexibility} onChange={(v) => setR('flexibility', v)} hint="발을 높이 올리는 정도(하이 스텝), 기준 3" />
               <NumField label="사진 속 벽 너비" unit="m" value={raw.wall} onChange={(v) => setR('wall', v)} />
+              <label className="field">
+                <span>Roboflow API 키</span>
+                <div className="inp">
+                  <input type="password" autoComplete="off" placeholder="없으면 색으로 홀드를 찾아요" value={rfKey} onChange={(e) => { setRfKey(e.target.value.trim()); setRfKeyState(e.target.value.trim()) }} />
+                </div>
+                <small>홀드 위치를 AI로 찾을 때 써요. 이 기기에만 저장되고 사진은 Roboflow로 보내져요</small>
+              </label>
             </div>
             <div className="figure">
               <BodyFigure height={height} wingspan={wingspan} />
