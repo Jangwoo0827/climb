@@ -367,7 +367,9 @@ export default function App() {
     const useCloud = cl.status === 'ok' && cl.holds.length > 0
     const found = useCloud ? filterByTarget(photo.img, cl.holds, t) : detectHolds(photo.img, t)
     setHoldsSrc(useCloud ? 'cloud' : 'color')
-    const vols = detectVolumes(photo.img).filter((v) => !found.some((f) => Math.hypot((f.x - v.x) * photo.aspect, f.y - v.y) < 0.04))
+    // 클라우드 검출이 있으면 그 상자 안에 중심이 있는 볼륨만 인정(사람·천장·벽 구조물을 볼륨으로 잘못 잡지 않게)
+    const inCloudBox = (v) => cl.holds.some((c) => v.x >= c.box.x0 && v.x <= c.box.x1 && v.y >= c.box.y0 && v.y <= c.box.y1)
+    const vols = detectVolumes(photo.img).filter((v) => !found.some((f) => Math.hypot((f.x - v.x) * photo.aspect, f.y - v.y) < 0.04) && (!useCloud || inCloudBox(v)))
     return [...found, ...vols]
   }
   // 사진을 열면 클라우드 검출을 시작(기다리는 동안에도 색 검출로 바로 쓸 수 있음)
