@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, lazy, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { detectAllHolds, detectHolds, detectVolumes, pickTarget, sampleImage } from './utils/detect.js'
 import { FEET, HOLD_ORDER, HOLD_TYPES, MOVES, estimateHoldType } from './utils/glossary.js'
 import { buildSequence } from './utils/stickman.js'
@@ -150,23 +150,18 @@ function BodyFigure({ height, wingspan }) {
   )
 }
 
-function useTweenPose(target, ms = 700) {
-  const [shown, setShown] = useState(target)
-  const fromRef = useRef(target)
-  const shownRef = useRef(target)
+// 애니메이션 중인 자세를 담는 작은 저장소. 매 프레임 값이 바뀌어도 앱 전체가 아니라 이 값을 구독한 부분(졸라맨, 측면, 3D)만 다시 그림
+function usePoseTween(target, ms = 700) {
+  const store = useRef(null)
+  if (!store.current) {
+    const subs = new Set()
+    store.current = { value: target, get: () => store.current.value, subscribe: (f) => (subs.add(f), () => subs.delete(f)), set: (v) => ((store.current.value = v), subs.forEach((f) => f())) }
+  }
   useEffect(() => {
-    if (!target) {
-      shownRef.current = null
-      setShown(null)
-      return
-    }
-    const from = shownRef.current
-    if (!from) {
-      shownRef.current = target
-      setShown(target)
-      return
-    }
-    fromRef.current = from
+    const st = store.current
+    if (!target) return st.set(null)
+    const from = st.value
+    if (!from) return st.set(target)
     // 손발 여러 개가 바뀌는 동작은 하나씩 차례로 옮기므로 그만큼 길게
     const n = moversOf(from, target).length
     const dur = n > 1 ? ms * (0.4 + 0.6 * n) : ms
@@ -174,24 +169,28 @@ function useTweenPose(target, ms = 700) {
     const t0 = performance.now()
     const tick = (now) => {
       const t = Math.min(1, (now - t0) / dur)
-      const p = blendPose(fromRef.current, target, t)
-      shownRef.current = p
-      setShown(p)
+      st.set(blendPose(from, target, t))
       if (t < 1) raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)
     // 화면이 가려져 애니메이션 프레임이 멈춰도 최종 자세로는 넘어가게 함
     const done = setTimeout(() => {
       cancelAnimationFrame(raf)
-      shownRef.current = target
-      setShown(target)
+      st.set(target)
     }, dur + 80)
     return () => {
       cancelAnimationFrame(raf)
       clearTimeout(done)
     }
   }, [target, ms])
-  return shown
+  return store.current
+}
+
+// 저장소의 현재 자세(2D)와 그 3D 좌표를 받아 children(p, p3)를 그림
+function LivePose({ store, feetInfo, heightM, children }) {
+  const p = useSyncExternalStore(store.subscribe, store.get)
+  const p3 = useMemo(() => (p ? pose3d(p, heightM, feetInfo) : null), [p, heightM, feetInfo])
+  return p && p3 ? children(p, p3) : null
 }
 
 const defaultBody = { height: '165', wingspan: '165', flexibility: '3', wall: '3.5' }
@@ -454,7 +453,7 @@ export default function App() {
     for (const f of frames) for (const id of f.fig.feetOnHolds) if (!order.includes(id)) order.push(id)
     return order
   }, [plan, frames])
-  const shownPose = useTweenPose(fig?.p ?? null)
+  const poseStore = usePoseTween(fig?.p ?? null)
   const [view3d, setView3d] = useState(false)
   // 손이 잡은 홀드의 종류(왼손/오른손): 그림의 손 위치에서 가장 가까운 잡은 홀드
   const handTypes = useMemo(() => {
@@ -471,7 +470,6 @@ export default function App() {
     return { L: typeAt(fig.p.hl), R: typeAt(fig.p.hr) }
   }, [fig, plan])
   const smearSides = useMemo(() => Object.fromEntries((fig?.feetInfo ?? []).map((f) => [f.side, f.id === null])), [fig])
-  const shown3 = useMemo(() => (shownPose && fig ? pose3d(shownPose, height / 100, fig.feetInfo) : null), [shownPose, fig, height])
   const [playing, setPlaying] = useState(false)
   // 재생: 처음부터 마지막 동작까지 자동으로 한 동작씩 넘김
   useEffect(() => {
@@ -574,10 +572,12 @@ export default function App() {
                 <button className="btn primary wide" onClick={() => fileRef.current.click()}>📷 사진 찍기 / 선택</button>
                 <button className="btn wide" onClick={useDemo}>데모 벽으로 체험</button>
               </div>
-            ) : view3d && shown3 ? (
+            ) : view3d && fig ? (
               <div className="wall wall3d" style={{ width: fit.w, height: fit.h }}>
                 <Suspense fallback={<div className="banner">3D 불러오는 중…</div>}>
-                  <View3D photoUrl={photo.url} wallW={wallWidth} wallH={wallWidth / photo.aspect} p3={shown3} handTypes={handTypes} smear={smearSides} heightM={height / 100} hard={step?.hard} />
+                  <LivePose store={poseStore} feetInfo={fig.feetInfo} heightM={height / 100}>
+                    {(_, p3) => <View3D photoUrl={photo.url} wallW={wallWidth} wallH={wallWidth / photo.aspect} p3={p3} handTypes={handTypes} smear={smearSides} heightM={height / 100} hard={step?.hard} />}
+                  </LivePose>
                 </Suspense>
                 <div className="hint3d">드래그로 돌리기 · 휠로 확대 · 하늘색 발 = 홀드, 주황 발 = 벽 밀기</div>
               </div>
@@ -599,13 +599,21 @@ export default function App() {
                         />
                       )
                     })}
-                  {fig && shownPose && fig.feetInfo.map((f) =>
+                  {fig && (
+                    <LivePose store={poseStore} feetInfo={fig.feetInfo} heightM={height / 100}>
+                      {(p2, p3) => (
+                        <>
+                  {fig.feetInfo.map((f) =>
                     f.kind === 'smear' ? (
                       // 스미어: 홀드 없이 벽을 미는 발. 발바닥이 벽에 닿아 있음을 짧은 선으로 표시
-                      <line key={'sm' + f.side} x1={Number(sv(shownPose[f.side === 'L' ? 'footL' : 'footR']).split(',')[0]) - 10 * u} x2={Number(sv(shownPose[f.side === 'L' ? 'footL' : 'footR']).split(',')[0]) + 10 * u} y1={Number(sv(shownPose[f.side === 'L' ? 'footL' : 'footR']).split(',')[1]) + 4 * u} y2={Number(sv(shownPose[f.side === 'L' ? 'footL' : 'footR']).split(',')[1]) + 4 * u} stroke="#4dd0ff" strokeWidth={4 * u} strokeLinecap="round" />
+                      <line key={'sm' + f.side} x1={Number(sv(p2[f.side === 'L' ? 'footL' : 'footR']).split(',')[0]) - 10 * u} x2={Number(sv(p2[f.side === 'L' ? 'footL' : 'footR']).split(',')[0]) + 10 * u} y1={Number(sv(p2[f.side === 'L' ? 'footL' : 'footR']).split(',')[1]) + 4 * u} y2={Number(sv(p2[f.side === 'L' ? 'footL' : 'footR']).split(',')[1]) + 4 * u} stroke="#4dd0ff" strokeWidth={4 * u} strokeLinecap="round" />
                     ) : null,
                   )}
-                  {fig && shown3 && <Stickman p3={shown3} handTypes={handTypes} sv={sv} u={u} heightM={height / 100} headR={0.06 * (height / 100) * k} hard={step?.hard} label={fig.airborne ? '점프!' : null} />}
+                  <Stickman p3={p3} handTypes={handTypes} sv={sv} u={u} heightM={height / 100} headR={0.06 * (height / 100) * k} hard={step?.hard} label={fig.airborne ? '점프!' : null} />
+                        </>
+                      )}
+                    </LivePose>
+                  )}
                   {typedHolds.map((h, i) =>
                     h.type === 'volume' && h.extent ? (
                       <circle key={i} cx={h.x * photo.aspect} cy={h.y} r={Math.sqrt((h.size * photo.aspect) / Math.PI) * 0.85} fill="none" stroke="#b0e0ff" strokeWidth={2.5 * u} strokeDasharray={`${8 * u} ${5 * u}`} />
@@ -706,7 +714,11 @@ export default function App() {
                     </div>
                     <button className="nav" disabled={fi >= frames.length - 1} onClick={() => { setPlaying(false); setFrameIdx(fi + 1) }}>▶</button>
                   </div>
-                  {shown3 && <SideView p3={shown3} feetInfo={fig?.feetInfo} heightM={height / 100} />}
+                  {fig && (
+                    <LivePose store={poseStore} feetInfo={fig.feetInfo} heightM={height / 100}>
+                      {(_, p3) => <SideView p3={p3} feetInfo={fig.feetInfo} heightM={height / 100} />}
+                    </LivePose>
+                  )}
                   <div className="pills">
                     {moveKey && MOVES[moveKey] && (
                       <button className="pill move" onClick={() => openTerm('move', moveKey)}>동작 · {MOVES[moveKey].name}</button>
