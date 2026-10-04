@@ -197,7 +197,7 @@ function makeSolver(holds, body, heightM) {
             if (sit) return d <= 0.95 * leg && d >= 0.3 * leg && f.p.y <= hip.y + 0.15 * leg
             // 동작 중간 자세: 무릎을 좀 더 굽혀도 되지만 다리를 옆으로 눕히지는 않음(수직에서 약 55도까지)
             // 아주 완화(3차): 동작 중간 한 순간만 — 무릎을 더 굽히고 다리를 더 옆으로 둬도 됨
-            if (opts.loose === 2) return d <= 0.99 * leg && d >= 0.48 * leg && f.p.y <= hip.y - 0.05 * leg && Math.abs(f.p.x - hip.x) <= 1.35 * (hip.y - f.p.y) + 0.02
+            if (opts.loose === 2) return d <= 0.99 * leg && d >= 0.52 * leg && f.p.y <= hip.y - 0.05 * leg && Math.abs(f.p.x - hip.x) <= 1.35 * (hip.y - f.p.y) + 0.02
             if (opts.loose) return d <= 0.97 * leg && d >= 0.5 * leg && f.p.y <= hip.y - 0.15 * leg && Math.abs(f.p.x - hip.x) <= 1.35 * (hip.y - f.p.y) - 0.04
             // 발을 고르는 조건과 같게: 다리를 적당히 펴고(무릎이 접히지 않게), 엉덩이 아래쪽 방향(다리를 눕히지 않게)
             return d <= 0.97 * leg && d >= 0.55 * leg && f.p.y <= hip.y - Math.min(highStep, 0.2) * leg && Math.abs(f.p.x - hip.x) <= 1.2 * (hip.y - f.p.y) - 0.04
@@ -209,6 +209,8 @@ function makeSolver(holds, body, heightM) {
           // 손 프레임은 무게중심이 두 발 사이(발을 옮기는 도중인 발 프레임은 잠깐 벗어나도 됨)
           if (!opts.footStep && opts.loose !== 1 && !fmatch && !sit && (hx < Math.min(f1.p.x, f2.p.x) - 0.04 || hx > Math.max(f1.p.x, f2.p.x) + 0.04)) continue
           footCost = 0
+          // 홀드를 딛은 발이 하나면 무게중심을 그 발 위로(벽 민 발이 아니라 딛고 있는 발이 체중을 받음)
+          if (!fmatch && (f1.id === null) !== (f2.id === null)) footCost += ((hx - (f1.id === null ? f2 : f1).p.x) / torso) ** 2 * 8
         } else {
         const fy = sit ? Math.max(FOOT_CLEAR + 0.1, hy) : Math.max(FOOT_CLEAR, hy - 0.78 * leg)
         const off = sit ? 0.2 * heightM : Math.min(0.17 * heightM, 1.1 * (hy - fy))
@@ -247,7 +249,13 @@ function makeSolver(holds, body, heightM) {
             const hi = Math.max(a.p.x, b.p.x)
             // 한 발만 홀드: 다른 발은 편한 자리에서 벽을 밀면 합발보다 자연스러울 때가 있어 비용을 합발과 비슷하게(7)
             const oneFoot = !footMatch && (a.id === null) !== (b.id === null)
-            let c = (oneFoot ? (a.id === null ? 7 + b.c : a.c + 7) : a.c + b.c) + (footMatch ? 8 : 0) // 합발은 다른 홀드 두 개를 딛을 수 없을 때만
+            let c = (oneFoot ? (a.id === null ? 12 + b.c : a.c + 12) : a.c + b.c) + (footMatch ? 14 : 0) // 합발은 다른 홀드 두 개를 딛을 수 없을 때만
+            // 체중은 홀드를 딛은 발이 받음: 한 발만 홀드면 무게중심(엉덩이)을 그 발 위로. 벽 민 발은 균형만 잡음
+            if (oneFoot) {
+              const dx = Math.abs(hx - (a.id === null ? b : a).p.x)
+              if (!relax && !sit && dx > 0.12 * heightM) continue // 딛은 발 위에서 벗어나 벽 민 발에 기대는 자세는 쓰지 않음
+              c += (dx / torso) ** 2 * 8
+            }
             if (!footMatch && (hx < lo - 0.04 || hx > hi + 0.04)) continue // 무게중심이 두 발 밖인 조합은 쓰지 않음
             if (!footMatch && hx < lo - 0.03 || (!footMatch && hx > hi + 0.03)) c += 4 + (Math.min(Math.abs(hx - lo), Math.abs(hx - hi)) / torso) * 8
             if (hi - lo > 0.58 * heightM) continue // 다리를 찢는 조합은 쓰지 않음

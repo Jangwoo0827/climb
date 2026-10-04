@@ -33,6 +33,8 @@ let handGap = 0
 let twoHolds = 0
 let bad = 0
 let armsCross = 0
+let smearFeet = 0
+let comOffHold = 0
 let floatBent = 0
 const segX = (a, b, c, d) => { const o = (p, q, r) => Math.sign((q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x)); return o(a, b, c) * o(a, b, d) < 0 && o(c, d, a) * o(c, d, b) < 0 }
 for (const [name, sc] of Object.entries(scenes).filter(([n]) => !process.env.SCENE || n === process.env.SCENE))
@@ -96,6 +98,9 @@ for (const [name, sc] of Object.entries(scenes).filter(([n]) => !process.env.SCE
               // 무릎이 두 손보다 위(스파이더맨 자세)
               if (Math.max(p.kneeL.y, p.kneeR.y) > Math.max(p.hl.y, p.hr.y) + 0.02) issues.push('무릎이 손보다 위')
               const onHold = fig.feetInfo.filter((f) => f.id !== null).length
+              smearFeet += fig.feetInfo.filter((f) => f.id === null).length
+              // 홀드를 딛은 발이 하나뿐인데 무게중심(엉덩이)이 그 발 위가 아님(벽 민 발에 기댐)
+              if (onHold === 1) { const hf = fig.feetInfo[0].id !== null ? p.footL : p.footR; if (Math.abs(p.hip.x - hf.x) > 0.12 * H) comOffHold++ }
               if (onHold === 0) smearBoth++
               if (fm) footMatch++
               if (onHold === 2 && !fm) twoHolds++
@@ -116,5 +121,5 @@ for (const [name, sc] of Object.entries(scenes).filter(([n]) => !process.env.SCE
         })
       }
 if (process.env.SCENE) console.log('scene', process.env.SCENE)
-console.log('자세', total, '문제', bad, '· 발이 홀드에 0개', smearBoth, '· 1개', oneFoot, '· 손 이동', steps, '중 크게 뻗는 이동', longMoves, '· 팔 굽혀 매달림', bentArms, '· 합발', footMatch, '· 엉덩이 높음', hipHigh, '· 두 손 높이차 60cm↑', handGap, '· 다른 홀드 두 개', twoHolds, '· 발 옮기기 프레임', footFrames, '· 손과 발을 함께 옮김', multiLimb, '· 팔 겹침', armsCross, '· 발 약한데 팔 굽혀 매달림', floatBent, '/ 손 동작', handFrames)
+console.log('자세', total, '문제', bad, '· 발이 홀드에 0개', smearBoth, '· 1개', oneFoot, '· 손 이동', steps, '중 크게 뻗는 이동', longMoves, '· 팔 굽혀 매달림', bentArms, '· 합발', footMatch, '· 엉덩이 높음', hipHigh, '· 두 손 높이차 60cm↑', handGap, '· 다른 홀드 두 개', twoHolds, '· 발 옮기기 프레임', footFrames, '· 손과 발을 함께 옮김', multiLimb, '· 벽 민 발', smearFeet, '· 한 발 홀드인데 무게중심이 그 발 밖', comOffHold, '· 팔 겹침', armsCross, '· 발 약한데 팔 굽혀 매달림', floatBent, '/ 손 동작', handFrames)
 process.exitCode = bad ? 1 : 0
