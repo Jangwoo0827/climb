@@ -152,6 +152,16 @@ def test_rom_barrier():
     assert (vals[4] - vals[3]) < (vals[3] - vals[2])  # 지수 증가
 
 
+def test_rom_barrier_ignores_straight_end():
+    """팔을 곧게 편 0°는 벌점 없음(과신전 항목이 따로 담당), 끝까지 굽힌 쪽만 장벽"""
+    rc = make()
+    r = rc.step(state(DT, limbs(), joints={'l_elbow_flexion': JointState(q=0.0), 'r_knee_flexion': JointState(q=0.0)}))
+    assert r.log['rom_barrier'] == 0.0 and r.log['hyperextension'] == 0.0
+    rc = make()
+    r = rc.step(state(DT, limbs(), joints={'l_elbow_flexion': JointState(q=144 * math.pi / 180)}))
+    assert r.log['rom_barrier'] < 0
+
+
 def test_hyperextension_and_velocity():
     rc = make()
     r = rc.step(state(DT, limbs(), joints={'r_knee_flexion': JointState(q=-0.2, qd=30.0)}))

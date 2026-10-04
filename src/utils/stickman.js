@@ -3,6 +3,8 @@
 // 무릎을 굽히고, 체중이 발 위에 실리는" 자세를 고른다. 사진 맨 아래(y=0)는 바닥이고, 시작 이후 발은 바닥에 닿지 않는다.
 // 손은 항상 엉덩이(허리)보다 위에 있어야 하고, 동작 이름(플래깅, 드롭니, 락오프 등)에 따라 자세가 달라진다.
 
+import { cloneSeen, HIP_Z, newSeen, scoreFrame, SHOULDER_Z, staticTerms } from './reward.js'
+
 const add = (a, b) => ({ x: a.x + b.x, y: a.y + b.y })
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y)
 
@@ -47,6 +49,9 @@ function joint(a, b, l1, l2, side, avoid, down = 0.8) {
   return score(c1) >= score(c2) ? c1 : c2
 }
 
+// 팔·다리를 이보다 짧게 접으면(팔/다리 길이 대비 어깨-손, 골반-발 거리) 팔꿈치 145°·무릎 140°를 넘음: 2·sin(35°/2)=0.30, 2·sin(40°/2)=0.34에 여유
+const ELBOW_MIN = 0.31
+const KNEE_MIN = 0.35
 const HAND_MARGIN = 0.05 // 손은 엉덩이보다 최소 이만큼(m) 위에 있어야 함
 const FOOT_CLEAR = 0.1 // 등반이 시작되면 발은 바닥에 닿지 않고 바닥에서 최소 이만큼(m) 위의 벽/홀드에 있어야 함
 
@@ -127,6 +132,16 @@ function makeSolver(holds, body, heightM) {
   // 한 단계의 자세를 푼다. prev: 직전 단계의 엉덩이 위치(자세가 갑자기 튀지 않게 함), opts: {move, movingPt}
   const solve = (L, R, prev, opts, relax = 0) => {
     const near = relax ? 0.35 : 0.6 // 발이 엉덩이에 이보다 가까우면(다리 길이 비율) 무릎이 접혀 부자연스러움
+    // 관절 가동범위(rl/ 보상 명세 4-3): 무릎은 140°까지만 굽힘 → 골반 옆점(hipL/hipR)과 발 사이가 다리의 0.35배 이상
+    // 완화 단계(손이 아주 낮은 싯 스타트 등)에서는 조금 더 접는 것을 허용하고, 대신 보상의 관절 한계 항목이 감점함
+    const kMin = relax ? 0.25 : KNEE_MIN
+    // 거리는 골반의 벽 앞 깊이(HIP_Z)를 더한 실제 3D 거리
+    const zh = HIP_Z * heightM
+    const kneeOk = (a, b, hip) => {
+      const [l, r] = a.p.x <= b.p.x ? [a, b] : [b, a]
+      const d3 = (f, hx) => Math.hypot(dist(f.p, { x: hx, y: hip.y }), zh)
+      return d3(l, hip.x - 0.05 * heightM) >= kMin * leg && d3(r, hip.x + 0.05 * heightM) >= kMin * leg
+    }
     // 팔이 몸을 가로지르지 않도록 손은 x 순서대로 왼손/오른손으로 배정
     // 매칭(두 손이 한 홀드)이면 손을 홀드 양쪽으로 살짝 벌려 잡음
     const pts = (L === R ? [{ x: holds[L].mx - 0.04, y: holds[L].my }, { x: holds[L].mx + 0.04, y: holds[L].my }] : [holds[L], holds[R]].map((h) => ({ x: h.mx, y: h.my }))).sort((a, b) => a.x - b.x)
@@ -166,7 +181,7 @@ function makeSolver(holds, body, heightM) {
             // 발을 고르는 조건과 같게: 다리를 적당히 펴고(무릎이 접히지 않게), 엉덩이 아래쪽 방향(다리를 눕히지 않게)
             return d <= 0.97 * leg && d >= 0.55 * leg && f.p.y <= hip.y - Math.min(highStep, 0.2) * leg && Math.abs(f.p.x - hip.x) <= 1.2 * (hip.y - f.p.y) - 0.04
           }
-          if (!reach(f1) || !reach(f2)) continue
+          if (!reach(f1) || !reach(f2) || !kneeOk(f1, f2, hip)) continue
           // 두 발 간격: 합발이 아니면 골반 너비 이상, 다리를 찢지 않게
           const fmatch = f1.id !== null && f1.id === f2.id
           if (!fmatch && (dist(f1.p, f2.p) < 0.16 * heightM || Math.abs(f1.p.x - f2.p.x) > 0.58 * heightM)) continue
@@ -215,6 +230,7 @@ function makeSolver(holds, body, heightM) {
             if (!footMatch && (hx < lo - 0.04 || hx > hi + 0.04)) continue // 무게중심이 두 발 밖인 조합은 쓰지 않음
             if (!footMatch && hx < lo - 0.03 || (!footMatch && hx > hi + 0.03)) c += 4 + (Math.min(Math.abs(hx - lo), Math.abs(hx - hi)) / torso) * 8
             if (hi - lo > 0.58 * heightM) continue // 다리를 찢는 조합은 쓰지 않음
+            if (!kneeOk(a, b, hip)) continue // 무릎을 가동범위 넘게 접는 조합은 쓰지 않음
             if (c < footCost) {
               footCost = c
               f1 = a
@@ -240,6 +256,7 @@ function makeSolver(holds, body, heightM) {
             const target = armTarget(opts?.move, isMoving)
             const d = dist({ x: S.x + dx, y: S.y }, h)
             if (d > arm * 0.999) reachOk = false // 팔이 닿지 않는 자세는 고르지 않음
+            if (Math.hypot(d, SHOULDER_Z * heightM) < ELBOW_MIN * arm) reachOk = false // 팔꿈치는 145°까지만 굽힘(어깨의 벽 앞 깊이 포함)
             if (d > 0.97 * arm) cost += 200 * ((d - 0.97 * arm) / arm + 0.05)
             else cost += ((d - target * arm) / arm) ** 2 * 30 // 팔을 곧게 펴고 엉덩이를 내려 뼈로 매달림(팔 힘을 아낌)
             if (wrong(h)) cost += 4 // 손이 가슴 앞이나 반대편이면 팔이 몸에 걸림
@@ -334,13 +351,29 @@ function makeSolver(holds, body, heightM) {
   return { solve, pose, jumpPose }
 }
 
+// 후보 동작 묶음의 점수: 프레임 사이 항목(홀드 확보, 몸 올리기, 움직임, 시간)은 합하고,
+// 자세 항목은 프레임 평균으로 씀 — 합하면 프레임이 많을수록 '버티기 보상'이 쌓여 쓸데없이 길게 끄는 쪽이 유리해짐
+function planScore(prevFig, figs, holds, heightM, seen) {
+  const sn = cloneSeen(seen)
+  let trans = 0
+  let stat = 0
+  let pf = prevFig
+  for (const fig of figs) {
+    const { terms } = scoreFrame(pf, fig, holds, heightM, sn)
+    const st = staticTerms(fig, holds, heightM)
+    for (const [k, v] of Object.entries(terms)) (k in st ? (stat += v) : (trans += v))
+    pf = fig
+  }
+  return trans + stat / figs.length
+}
+
 const feetOfState = (s) => [s.f1, s.f2].slice().sort((a, b) => a.p.x - b.p.x) // [왼발, 오른발]
 const sameFoot = (a, b) => (a.id !== null ? a.id === b.id : b.id === null && dist(a.p, b.p) < 0.06)
 
 // 경로 전체를 프레임으로 만듦. 한 프레임에는 팔다리 하나만 움직임(손 따로, 발 따로).
 // 손을 옮기기 전에 발을 먼저 한 발씩 올리고(발 먼저), 그 상태로 손이 안 닿으면 손을 먼저 옮기고 발을 따라 올림.
 // 반환: [{ k: 'start' | 'foot' | 'hand' | 'jump', i: 손 동작 번호(출발은 -1), side: 'L'|'R'(발 프레임), fig }]
-export function buildSequence(route, holds, body, heightM) {
+export function buildSequence(route, holds, body, heightM, { useReward = true } = {}) {
   const { solve, pose, jumpPose } = makeSolver(holds, body, heightM)
   const ids = (s) => [s.f1?.id, s.f2?.id].filter((v) => v !== null && v !== undefined)
   const fixed = (L, R, feet, prevHip, opts) => {
@@ -352,6 +385,7 @@ export function buildSequence(route, holds, body, heightM) {
   let R = route.startR
   let s = solve(L, R, null, null)
   frames.push({ k: 'start', i: -1, fig: pose(s, L, R, null, null) })
+  const seen = newSeen(frames[0].fig)
 
   route.steps.forEach((st, i) => {
     const opts = { move: st.move, movingPt: { x: holds[st.to].mx, y: holds[st.to].my } }
@@ -362,76 +396,106 @@ export function buildSequence(route, holds, body, heightM) {
       frames.push({ k: 'jump', i, fig: jumpPose(L, R, st) })
       s = solve(nL, nR, s.hip, { ...opts, prevFeet: ids(s) })
       frames.push({ k: 'hand', i, fig: pose(s, nL, nR, st.move, st) })
+      scoreFrame(frames[frames.length - 2].fig, frames[frames.length - 1].fig, holds, heightM, seen)
       L = nL
       R = nR
       return
     }
-    const target = solve(nL, nR, s.hip, { ...opts, prevFeet: ids(s) })
+    // 목표 자세 후보: 직전 발 홀드를 유지하려는 자세 + 그런 치우침 없이 푼 자세
+    const targets = [solve(nL, nR, s.hip, { ...opts, prevFeet: ids(s) })]
+    const alt = solve(nL, nR, s.hip, opts)
+    if (alt?.hip && targets[0]?.hip && !(sameFoot(alt.f1, targets[0].f1) && sameFoot(alt.f2, targets[0].f2))) targets.push(alt)
     const cur = feetOfState(s)
-    const tgt = feetOfState(target)
-    // 목표에서 벽을 밀 발이 지금 홀드를 딛고 있으면, 그 홀드를 그대로 둬도 되는지 보고 되면 떼지 않음
-    for (const k of [0, 1]) {
-      if (tgt[k].id !== null || cur[k].id === null) continue
-      const keep = [...tgt]
-      keep[k] = cur[k]
-      if (fixed(nL, nR, keep, s.hip, opts)) tgt[k] = cur[k]
-    }
-    // 바뀌는 발: 더 많이 올라가야 하는 발부터 옮김
-    const changed = [0, 1]
-      .filter((k) => !sameFoot(cur[k], tgt[k]))
-      .sort((a, b) => tgt[b].p.y - cur[b].p.y - (tgt[a].p.y - cur[a].p.y))
-
-    // 손, 왼발, 오른발 중 바뀌는 것들을 한 번에 하나씩 옮기는 모든 순서를 시도함(발을 먼저 옮기는 순서를 우선)
-    const limbs = ['hand', ...changed]
-    const orders = []
-    const permute = (rest, acc) => {
-      if (!rest.length) return orders.push(acc)
-      rest.forEach((x, n) => permute([...rest.slice(0, n), ...rest.slice(n + 1)], [...acc, x]))
-    }
-    permute(limbs, [])
-    // 중간에 홀드를 딛는 발이 하나도 없는 순간이 적은 순서 → 손을 늦게 옮기는(발 먼저) 순서 순으로 시도
-    const unsupported = (order) => {
-      const f = [...cur]
-      let n = 0
-      for (const limb of order.slice(0, -1)) {
-        if (limb !== 'hand') f[limb] = tgt[limb]
-        if (f.every((x) => x.id === null)) n++
-      }
-      return n
-    }
-    orders.sort((a, b) => unsupported(a) - unsupported(b) || b.indexOf('hand') - a.indexOf('hand'))
-    let plan = null
-    // 엄격한 조건으로 먼저 찾고, 없으면 중간 자세만 조건을 완화해서 다시 찾음(사람도 동작 중간엔 잠깐 불편한 자세를 지남)
-    for (const loose of [false, true]) for (const order of orders) {
-      if (plan) break
-      let hands = [L, R]
-      let feet = [...cur]
-      let hip = s.hip
-      const out = []
-      let ok = true
-      for (const limb of order) {
-        if (limb === 'hand') hands = [nL, nR]
-        else {
-          feet = [...feet]
-          feet[limb] = tgt[limb]
-        }
-        const isHand = limb === 'hand'
-        const last = limb === order[order.length - 1] // 마지막(도착) 자세는 항상 엄격한 조건
-        const r = fixed(hands[0], hands[1], feet, hip, { ...(isHand ? opts : { move: null, footStep: true }), loose: loose && !last })
-        if (!r) {
-          ok = false
-          break
-        }
-        out.push(isHand ? { k: 'hand', s: r, hands } : { k: 'foot', side: limb === 0 ? 'L' : 'R', s: r, hands })
-        hip = r.hip
-      }
-      if (ok) plan = out
-    }
-    if (!plan) plan = [{ k: 'hand', s: target, hands: [nL, nR], together: true }]
-
-    for (const f of plan) {
+    const prevFig = frames[frames.length - 1].fig
+    const toFrames = (plan) => plan.map((f) => {
       const isHand = f.k === 'hand'
-      frames.push({ k: f.k, i, side: f.side, together: f.together, fig: pose(f.s, f.hands[0], f.hands[1], isHand ? st.move : null, isHand ? st : null) })
+      return { k: f.k, i, side: f.side, together: f.together, fig: pose(f.s, f.hands[0], f.hands[1], isHand ? st.move : null, isHand ? st : null) }
+    })
+    let best = null
+    for (const target of targets) {
+      if (!target?.hip) continue
+      const tgt = feetOfState(target)
+      // 목표에서 벽을 밀 발이 지금 홀드를 딛고 있으면, 그 홀드를 그대로 둬도 되는지 보고 되면 떼지 않음
+      for (const k of [0, 1]) {
+        if (tgt[k].id !== null || cur[k].id === null) continue
+        const keep = [...tgt]
+        keep[k] = cur[k]
+        if (fixed(nL, nR, keep, s.hip, opts)) tgt[k] = cur[k]
+      }
+      const changed = [0, 1].filter((k) => !sameFoot(cur[k], tgt[k]))
+
+      // 손, 왼발, 오른발 중 바뀌는 것들을 한 번에 하나씩 옮기는 모든 순서
+      const orders = []
+      const permute = (rest, acc) => {
+        if (!rest.length) return orders.push(acc)
+        rest.forEach((x, n) => permute([...rest.slice(0, n), ...rest.slice(n + 1)], [...acc, x]))
+      }
+      permute(['hand', ...changed], [])
+      // 중간에 홀드를 딛는 발이 하나도 없는 순간이 적은 순서 → 손을 늦게 옮기는(발 먼저) 순서 순(보상을 끄면 이 순서의 첫 번째를 씀)
+      const unsupported = (order) => {
+        const f = [...cur]
+        let n = 0
+        for (const limb of order.slice(0, -1)) {
+          if (limb !== 'hand') f[limb] = tgt[limb]
+          if (f.every((x) => x.id === null)) n++
+        }
+        return n
+      }
+      orders.sort((a, b) => unsupported(a) - unsupported(b) || b.indexOf('hand') - a.indexOf('hand'))
+      // 엄격한 조건으로 되는 순서를 모두 모으고, 하나도 없으면 중간 자세만 조건을 완화(사람도 동작 중간엔 잠깐 불편한 자세를 지남)
+      const plans = []
+      for (const loose of [false, true]) {
+        if (plans.length) break
+        for (const order of orders) {
+          let hands = [L, R]
+          let feet = [...cur]
+          let hip = s.hip
+          const out = []
+          let ok = true
+          for (const limb of order) {
+            if (limb === 'hand') hands = [nL, nR]
+            else {
+              feet = [...feet]
+              feet[limb] = tgt[limb]
+            }
+            const isHand = limb === 'hand'
+            const last = limb === order[order.length - 1] // 마지막(도착) 자세는 항상 엄격한 조건
+            const r = fixed(hands[0], hands[1], feet, hip, { ...(isHand ? opts : { move: null, footStep: true }), loose: loose && !last })
+            if (!r) {
+              ok = false
+              break
+            }
+            out.push(isHand ? { k: 'hand', s: r, hands } : { k: 'foot', side: limb === 0 ? 'L' : 'R', s: r, hands })
+            hip = r.hip
+          }
+          if (ok) plans.push(Object.assign(out, { unsup: unsupported(order) }))
+        }
+      }
+      // 강화학습 보상(reward.js)으로 후보를 채점해 가장 높은 것을 고름
+      if (!useReward) {
+        if (plans.length && !best) best = { plan: plans[0], frames: toFrames(plans[0]) }
+        continue
+      }
+      // 발이 홀드에 하나도 없는 순간이 적은 순서가 우선(사용자 규칙), 그 안에서 보상으로 고름
+      const minUnsup = Math.min(...plans.map((p) => p.unsup))
+      for (const plan of plans) {
+        if (plan.unsup > minUnsup) continue
+        const fr = toFrames(plan)
+        const sc = planScore(prevFig, fr.map((f) => f.fig), holds, heightM, seen)
+        if (!best || sc > best.score) best = { score: sc, plan, frames: fr }
+      }
+    }
+    let plan = best?.plan
+    if (!plan) {
+      const target = targets.find((t) => t?.hip) ?? targets[0]
+      plan = [{ k: 'hand', s: target, hands: [nL, nR], together: true }]
+    }
+    const chosen = best?.frames ?? toFrames(plan)
+    let pf = prevFig
+    for (const f of chosen) {
+      scoreFrame(pf, f.fig, holds, heightM, seen) // 보너스 받은 홀드 기록 갱신
+      pf = f.fig
+      frames.push(f)
     }
     s = plan[plan.length - 1].s
     L = nL

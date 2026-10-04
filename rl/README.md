@@ -9,7 +9,7 @@ MuJoCo / Isaac Lab / MyoSuite 환경을 나중에 붙일 때, 환경이 매 스�
 ## 실행
 
 ```bash
-python tests/test_rewards.py   # 23개 검사 (pytest 없이 실행)
+python tests/test_rewards.py   # 24개 검사 (pytest 없이 실행)
 python demo.py                 # 손으로 짠 동작 3개 채점: good > arms > hacker
 ```
 
@@ -58,6 +58,12 @@ numpy만 있으면 돼요. config는 JSON이라 PyYAML도 필요 없어요.
 3. **정체 중에는 과제 외 양수 보상을 막아요.** 데모에서 실제로 발견된 해킹이에요. 명세의 초기 가중치를 그대로 쓰면 com_support, contact_count, leg_load_ratio처럼 매 스텝 들어오는 + 보상이 사실상 **생존 보상**이 돼요. 그래서 홀드 근처에서 버티기만 하는 hacker가 완등한 good보다 높은 점수를 받았어요(198 vs 133). 정체 판정(5초간 진행 없음) 중에는 이 + 값들을 0으로 만들어요(`stagnation_gates_shaping`). 이후 hacker는 −32점이 됐어요.
 4. **루트를 건너뛰어도 진행돼요.** 뒤쪽 목표 홀드를 먼저 확보하면 목표가 그 다음 단계로 넘어가요.
 5. **발 보너스에도 T_hold를 적용해요.** 발도 안정 접촉 T_hold와 하중 조건을 같이 만족해야 보너스를 줘요. 발로 진동하는 해킹을 막기 위해서예요.
+
+6. **팔꿈치·무릎을 곧게 편 끝(0°)에는 ROM 장벽을 걸지 않아요.** 곧게 편 상태는 뼈로 버티는 정상 자세라서 과신전 항목에 맡겼어요. 장벽을 걸면 팔을 펴고 매달릴수록 벌점이 생겨 `straight_arm_rest`와 정면으로 충돌해요.
+
+## 앱에 적용
+
+웹 앱은 이 보상을 2D 졸라맨에 맞게 옮긴 [`src/utils/reward.js`](../src/utils/reward.js)로 자세 후보를 채점해서 골라요. 가중치는 이 폴더의 `config/rewards.json`과 같아요(`node scripts/reward-check.mjs`로 검사). 자세한 내용은 기획서의 「앱 자세 생성에 적용」에 있어요.
 
 ## 해킹 대응 검사 (`tests/test_rewards.py`)
 

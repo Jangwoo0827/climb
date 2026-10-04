@@ -3,6 +3,7 @@ import { detectAllHolds, detectHolds, pickTarget, sampleImage } from './utils/de
 import { FEET, HOLD_ORDER, HOLD_TYPES, MOVES, estimateHoldType } from './utils/glossary.js'
 import { buildSequence } from './utils/stickman.js'
 import { blendPose } from './utils/animate.js'
+import { TERM_NAMES, scoreFrames } from './utils/reward.js'
 import { LEVELS, bodyModel, estimateGrade, findRoute, generateRoute, toMeters } from './utils/route.js'
 
 // 사진 없이 체험할 수 있는 데모 벽 (초록색 = 우리 루트, 나머지는 다른 루트)
@@ -380,6 +381,8 @@ export default function App() {
   const nSteps = plan?.route?.steps.length ?? 0
   // 프레임: 출발 → (발 옮기기 → 손 옮기기)… 한 프레임에 팔다리 하나만 움직임
   const frames = useMemo(() => (plan?.route ? buildSequence(plan.route, plan.m, model, height / 100) : []), [plan, model, height])
+  // 강화학습 보상 명세로 채점한 프레임별 점수(자세 고를 때 쓴 것과 같은 채점기)
+  const scores = useMemo(() => (frames.length && plan ? scoreFrames(frames, plan.m, height / 100) : null), [frames, plan, height])
   const fi = Math.min(frameIdx, Math.max(0, frames.length - 1))
   const frame = frames[fi] ?? { k: 'start' }
   const idx = frame.k === 'start' ? -1 : frame.i // 현재 보고 있는 동작 번호(0부터)
@@ -656,6 +659,21 @@ export default function App() {
                       </>
                     )}
                   </div>
+                  {scores?.frames[fi] && (() => {
+                    const sc = scores.frames[fi]
+                    const avg = scores.total / scores.frames.length
+                    const items = Object.entries(sc.terms).filter(([, v]) => Math.abs(v) >= 0.05)
+                    const good = items.filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).slice(0, 2)
+                    const bad = items.filter(([, v]) => v < 0).sort((a, b) => a[1] - b[1]).slice(0, 1)
+                    return (
+                      <div className="reward" title="강화학습 보상 함수(rl/)로 매긴 점수. 자세 후보 중 이 점수가 가장 높은 것을 골랐어요">
+                        <span className={sc.total >= avg ? 'rscore up' : 'rscore'}>AI 점수 {sc.total.toFixed(1)}</span>
+                        <small>평균 {avg.toFixed(1)}</small>
+                        {good.map(([k, v]) => <span key={k} className="rterm plus">+{v.toFixed(1)} {TERM_NAMES[k] ?? k}</span>)}
+                        {bad.map(([k, v]) => <span key={k} className="rterm minus">{v.toFixed(1)} {TERM_NAMES[k] ?? k}</span>)}
+                      </div>
+                    )
+                  })()}
                 </>
               )}
             </div>

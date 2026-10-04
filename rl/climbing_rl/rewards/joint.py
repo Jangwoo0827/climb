@@ -24,6 +24,10 @@ def rom_barrier(ctx):
         lim = limit(name)
         if lim is None:
             continue
+        # 팔꿈치·무릎·손목의 '곧게 편' 끝(0°)은 뼈로 버티는 정상 자세라 장벽을 걸지 않고 과신전 항목이 맡는다.
+        # (안 그러면 팔을 펴고 매달릴수록 벌점 → straight_arm_rest 와 정면 충돌)
+        if lim[4] and j.q <= (lim[0] + lim[1]) / 2:
+            continue
         x = rom_fraction(j.q, lim[0], lim[1])
         if x > th:
             s += math.exp(k * (x - th)) - 1.0

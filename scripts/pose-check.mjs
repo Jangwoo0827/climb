@@ -44,7 +44,7 @@ for (const [name, sc] of Object.entries(scenes).filter(([n]) => !process.env.SCE
         const arm = (body.span - 0.23 * H) / 2
         steps += r.steps.length
         longMoves += r.steps.filter((st) => !st.dyno && st.reach > body.comfort * 1.15).length
-        const frames = buildSequence(r, holds, body, H)
+        const frames = buildSequence(r, holds, body, H, { useReward: process.env.REWARD !== 'off' })
         frames.forEach((fr, fidx) => {
           {
             const i = fr.i
