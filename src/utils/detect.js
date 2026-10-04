@@ -581,4 +581,15 @@ export function filterByTarget(img, holds, target, minFrac = 0.25) {
   })
 }
 
+// 볼륨의 손·발 자리(위·아래·왼쪽·오른쪽 가장자리): 모양 검출이 준 extent, 없으면(「종류」 모드로 볼륨으로 바꾼 홀드)
+// 검출 상자를 중심 쪽으로 12% 들여 씀. 볼륨이 아니거나 둘 다 없으면 null
+export function volumeExtent(h) {
+  if (h.type !== 'volume') return null
+  if (h.extent) return h.extent
+  const b = h.box
+  if (!b) return null
+  const ins = (px, py) => ({ x: h.x + (px - h.x) * 0.88, y: h.y + (py - h.y) * 0.88 })
+  return { top: ins(h.x, b.y0), bottom: ins(h.x, b.y1), left: ins(b.x0, h.y), right: ins(b.x1, h.y) }
+}
+
 export const __internals = { findBlobs, isHold, matches, polygonShape }

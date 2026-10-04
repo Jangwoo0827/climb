@@ -1,5 +1,5 @@
 import { Suspense, lazy, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { detectAllHolds, detectHolds, detectVolumes, filterByTarget, pickTarget, sampleImage } from './utils/detect.js'
+import { detectAllHolds, detectHolds, detectVolumes, filterByTarget, pickTarget, sampleImage, volumeExtent } from './utils/detect.js'
 import { detectHoldsCloud, getRfKey, setRfKey } from './utils/rfDetect.js'
 import { FEET, HOLD_ORDER, HOLD_TYPES, MOVES, estimateHoldType } from './utils/glossary.js'
 import { buildSequence } from './utils/stickman.js'
@@ -353,8 +353,9 @@ export default function App() {
   const usable = useMemo(() => {
     const out = []
     typedHolds.forEach((h, i) => {
-      if (h.type === 'volume' && h.extent) {
-        for (const pt of [h.extent.top, h.extent.left, h.extent.right, h.extent.bottom, { x: h.x, y: h.y }]) {
+      const ext = volumeExtent(h)
+      if (h.type === 'volume' && ext) {
+        for (const pt of [ext.top, ext.left, ext.right, ext.bottom, { x: h.x, y: h.y }]) {
           out.push({ x: pt.x, y: pt.y, size: normalSize, type: 'volume', parent: i, role: h.role })
         }
       } else out.push({ ...h, parent: i })
@@ -659,7 +660,10 @@ export default function App() {
                     </LivePose>
                   )}
                   {typedHolds.map((h, i) =>
-                    h.type === 'volume' && h.extent ? (
+                    h.type === 'volume' && h.box ? (
+                      // 볼륨: 범위(상자)를 점선으로 표시
+                      <rect key={i} x={h.box.x0 * photo.aspect} y={h.box.y0} width={(h.box.x1 - h.box.x0) * photo.aspect} height={h.box.y1 - h.box.y0} rx={6 * u} fill="none" stroke="#b0e0ff" strokeWidth={2.5 * u} strokeDasharray={`${8 * u} ${5 * u}`} />
+                    ) : h.type === 'volume' && h.extent ? (
                       <circle key={i} cx={h.x * photo.aspect} cy={h.y} r={Math.sqrt((h.size * photo.aspect) / Math.PI) * 0.85} fill="none" stroke="#b0e0ff" strokeWidth={2.5 * u} strokeDasharray={`${8 * u} ${5 * u}`} />
                     ) : (
                       <circle key={i} cx={h.x * photo.aspect} cy={h.y} r={8 * u} fill="none" stroke="#fff" strokeWidth={2 * u} />
