@@ -1,0 +1,12 @@
+{
+ "name": "experiment_003",
+ "description": "실험 B: 기존 데이터 + HoldClassificatore v2.2(dataset/holds_public), 실험 A와 같은 Teachable Machine 설정",
+ "model": "Teachable Machine 이미지 모델, experiments/experiment_003/model",
+ "dataset": {
+  "version": "holds_public",
+  "train": "capstone+extra+holdclassificatore, 종류별 최대 400장",
+  "test": "실험 A와 동일 1,320장"
+ },
+ "result_note": "실제 사진(capstone) 69.1% → 58.2%로 하락(크림프 19/22 → 13/22), 공개 데이터 테스트는 23.0% → 66.9%로 상승. 같은 55장에서 A만 맞힌 12장 vs B만 맞힌 6장, McNemar p=0.24로 표본이 작아 통계적으로 확정은 아님",
+ "decision": "앱 모델로 쓰지 않음: 목표(실제 벽 사진 성능)에 도움이 안 됨"
+}
