@@ -260,6 +260,7 @@ export default function App() {
   const [cloud, setCloud] = useState({ status: 'off', holds: [] })
   const [rfKey, setRfKeyState] = useState(getRfKey)
   const [holdsSrc, setHoldsSrc] = useState(null) // 'color' | 'cloud': 지금 루트 홀드를 어떤 검출로 만들었는지
+  const [showBoxes, setShowBoxes] = useState(false) // AI가 찾은 홀드 상자를 모두 보여주기(확인용)
   const [target, setTarget] = useState(null)
   const [holds, setHolds] = useState([])
   const [frameIdx, setFrameIdx] = useState(0) // 0=출발 자세, 이후 동작별 프레임(점프는 공중+착지 2프레임)
@@ -598,8 +599,8 @@ export default function App() {
         <main className="course">
           <div className="stage" ref={stageRef}>
             {photo && (
-              <div className="detect-src" title="홀드 위치를 찾은 방법">
-                {cloud.status === 'loading' ? '☁️ AI 검출 중…' : holdsSrc === 'cloud' || (!target && cloud.status === 'ok') ? `☁️ AI 검출 ${cloud.holds.length}개` : cloud.status === 'fail' ? `🎨 색 검출 (AI 실패: ${cloud.error})` : '🎨 색 검출'}
+              <div className={cloud.status === 'ok' ? 'detect-src click' : 'detect-src'} title={cloud.status === 'ok' ? '눌러서 AI가 찾은 상자 보기/숨기기' : '홀드 위치를 찾은 방법'} onClick={() => cloud.status === 'ok' && setShowBoxes(!showBoxes)}>
+                {cloud.status === 'loading' ? '☁️ AI 검출 중…' : holdsSrc === 'cloud' || (!target && cloud.status === 'ok') ? `☁️ AI 검출 ${cloud.holds.length}개 ${showBoxes ? '▣' : '□'}` : cloud.status === 'fail' ? `🎨 색 검출 (AI 실패: ${cloud.error})` : '🎨 색 검출'}
               </div>
             )}
             {photo && fig && (
@@ -625,6 +626,9 @@ export default function App() {
               <div className="wall" ref={boxRef} onClick={onTap} style={{ width: fit.w, height: fit.h }}>
                 <img src={photo.url} alt="벽" draggable="false" />
                 <svg viewBox={`0 0 ${photo.aspect} 1`} preserveAspectRatio="none">
+                  {showBoxes && cloud.status === 'ok' && cloud.holds.map((c, i) => (
+                    <rect key={'cb' + i} x={c.box.x0 * photo.aspect} y={c.box.y0} width={(c.box.x1 - c.box.x0) * photo.aspect} height={c.box.y1 - c.box.y0} fill="none" stroke="#ff4dff" strokeWidth={1.5 * u} strokeDasharray={`${4 * u} ${3 * u}`} opacity={0.5 + 0.5 * (c.conf ?? 1)} />
+                  ))}
                   {plan?.route &&
                     [plan.route.startL, ...plan.route.steps.map((s) => s.to)].slice(1).map((id, j, arr) => {
                       const a = plan.m[j === 0 ? plan.route.startL : arr[j - 1]]
