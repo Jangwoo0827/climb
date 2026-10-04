@@ -5,6 +5,9 @@
 
 import { cloneSeen, HIP_Z, newSeen, scoreFrame, SHOULDER_Z, staticTerms } from './reward.js'
 
+// 홀드가 종류 t일 비중: AI 확률이 있으면 그 확률, 없으면 정해진 종류면 1
+const gripW = (h, t) => (h?.probs ? h.probs[t] ?? 0 : h?.type === t ? 1 : 0)
+
 const add = (a, b) => ({ x: a.x + b.x, y: a.y + b.y })
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y)
 
@@ -163,7 +166,9 @@ function makeSolver(holds, body, heightM) {
     }
     // 팔이 몸을 가로지르지 않도록 손은 x 순서대로 왼손/오른손으로 배정
     // 매칭(두 손이 한 홀드)이면 손을 홀드 양쪽으로 살짝 벌려 잡음
-    const pts = (L === R ? [{ x: holds[L].mx - 0.04, y: holds[L].my }, { x: holds[L].mx + 0.04, y: holds[L].my }] : [holds[L], holds[R]].map((h) => ({ x: h.mx, y: h.my }))).sort((a, b) => a.x - b.x)
+    // 손 자리마다 그립 비중(언더클링·사이드풀·슬로퍼)을 붙임: 자세가 홀드 종류에 맞게 달라지도록
+    const gw = (h) => ({ under: gripW(h, 'undercling'), side: gripW(h, 'sidepull'), slope: gripW(h, 'sloper') + gripW(h, 'volume') * 0.5 })
+    const pts = (L === R ? [{ x: holds[L].mx - 0.04, y: holds[L].my, g: gw(holds[L]) }, { x: holds[L].mx + 0.04, y: holds[L].my, g: gw(holds[L]) }] : [holds[L], holds[R]].map((h) => ({ x: h.mx, y: h.my, g: gw(h) }))).sort((a, b) => a.x - b.x)
     const [hl, hr] = pts
     const mid = { x: (hl.x + hr.x) / 2, y: (hl.y + hr.y) / 2 }
     const minHipY = FOOT_CLEAR + (relax ? 0.25 : 0.45) * leg // 발(바닥에서 띄움)보다 엉덩이가 충분히 높아야 무릎이 엉덩이 위로 접히지 않음
@@ -197,7 +202,7 @@ function makeSolver(holds, body, heightM) {
             if (sit) return d <= 0.95 * leg && d >= 0.3 * leg && f.p.y <= hip.y + 0.15 * leg
             // 동작 중간 자세: 무릎을 좀 더 굽혀도 되지만 다리를 옆으로 눕히지는 않음(수직에서 약 55도까지)
             // 아주 완화(3차): 동작 중간 한 순간만 — 무릎을 더 굽히고 다리를 더 옆으로 둬도 됨
-            if (opts.loose === 2) return d <= 0.99 * leg && d >= 0.52 * leg && f.p.y <= hip.y - 0.05 * leg && Math.abs(f.p.x - hip.x) <= 1.35 * (hip.y - f.p.y) + 0.02
+            if (opts.loose === 2) return d <= 0.99 * leg && d >= 0.52 * leg && f.p.y <= hip.y - 0.05 * leg && Math.abs(f.p.x - hip.x) <= 1.35 * (hip.y - f.p.y) - 0.03
             if (opts.loose) return d <= 0.97 * leg && d >= 0.5 * leg && f.p.y <= hip.y - 0.15 * leg && Math.abs(f.p.x - hip.x) <= 1.35 * (hip.y - f.p.y) - 0.04
             // 발을 고르는 조건과 같게: 다리를 적당히 펴고(무릎이 접히지 않게), 엉덩이 아래쪽 방향(다리를 눕히지 않게)
             return d <= 0.97 * leg && d >= 0.55 * leg && f.p.y <= hip.y - Math.min(highStep, 0.2) * leg && Math.abs(f.p.x - hip.x) <= 1.2 * (hip.y - f.p.y) - 0.04
@@ -300,7 +305,15 @@ function makeSolver(holds, body, heightM) {
             const d3 = Math.hypot(d, SHOULDER_Z * heightM)
             const l = arm / 2
             maxFlex = Math.max(maxFlex, d3 >= arm ? 0 : Math.PI - Math.acos(Math.max(-1, Math.min(1, (2 * l * l - d3 * d3) / (2 * l * l)))))
-            if (h.y < S.y) cost += ((S.y - h.y) / arm) ** 2 * 6 // 손이 어깨 아래면 몸을 낮춰 손을 어깨 높이 근처로
+            const g = h.g ?? { under: 0, side: 0, slope: 0 }
+            if (h.y < S.y) cost += ((S.y - h.y) / arm) ** 2 * 6 * (1 - g.under) // 손이 어깨 아래면 몸을 낮춰 손을 어깨 높이 근처로(언더클링은 예외)
+            // 홀드 종류별 몸 위치
+            // 언더클링: 아래에서 위로 당기므로 어깨가 홀드보다 위(손이 가슴~허리 높이)
+            if (g.under) cost += g.under * (Math.max(0, h.y + 0.1 * arm - S.y) / arm) ** 2 * 25
+            // 사이드풀: 옆으로 당기므로 몸을 홀드 반대쪽으로 빼서 팔이 옆으로 누움
+            if (g.side) cost += g.side * (Math.max(0, 0.6 * arm - Math.abs(S.x - h.x)) / arm) ** 2 * 60
+            // 슬로퍼: 마찰로 누르므로 몸을 홀드보다 충분히 아래로(팔을 위로 곧게)
+            if (g.slope) cost += g.slope * (Math.max(0, S.y - (h.y - 0.7 * arm)) / arm) ** 2 * 15
           }
 
           // 무릎이 두 손보다 위로 올라가는(스파이더맨) 자세는 쓰지 않음

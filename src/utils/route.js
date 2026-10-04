@@ -33,6 +33,12 @@ export function bodyModel({ height, apeIndex, flexibility, level }) {
 }
 
 // holds: {x,y,size} 정규화 좌표(y는 아래로 증가). 이미지 너비 1.0 = wallWidthM 미터
+// 종류별 난이도 감점: AI 확률이 있으면 확률 가중 평균(애매한 홀드를 한 종류로 단정하지 않음)
+export function typePenalty(h) {
+  if (h.probs) return Object.entries(h.probs).reduce((a, [t, p]) => a + p * (HOLD_TYPES[t]?.penalty ?? 0), 0)
+  return HOLD_TYPES[h.type]?.penalty ?? 0
+}
+
 export function toMeters(holds, wallWidthM, aspect) {
   const wallHeightM = wallWidthM / aspect
   return holds.map((h, i) => ({
@@ -41,6 +47,7 @@ export function toMeters(holds, wallWidthM, aspect) {
     my: (1 - h.y) * wallHeightM, // 위쪽이 +
     size: h.size,
     type: h.type, // 홀드 종류(점보, 크림프 등)
+    probs: h.probs, // AI가 준 종류별 확률(볼륨 제외, 합 1). 없으면 type만 씀
     parent: h.parent, // 볼륨의 접점이면 그 볼륨이 원래 몇 번째 검출인지
     footOnly: h.footOnly, // 발 자유: 다른 색 홀드(발로만 씀)
     nx: h.x,
@@ -151,7 +158,7 @@ export function findRoute(holds, body, startIds, finishIds) {
           if (dy > 0) cost -= Math.min(dy, 0.5) * 0.6 // 위로 가는 진행은 약간 보상
           if (cross > 0.25) cost += 2
           cost += (1 - holds[t].size / maxSize) * body.level.jugBonus // 큰 홀드 선호
-          cost += (HOLD_TYPES[holds[t].type]?.penalty ?? 0) * body.level.grip // 잡기 어려운 종류(크림프, 슬로퍼 등)는 초보일수록 감점
+          cost += typePenalty(holds[t]) * body.level.grip // 잡기 어려운 종류(크림프, 슬로퍼 등)는 초보일수록 감점
           cost = Math.max(0.2, cost)
         }
         const nl = dyno ? t : hand === 'L' ? t : l // 점프하면 양손이 목표 홀드로 감
@@ -244,7 +251,7 @@ export function estimateGrade(route, holds, body) {
   const ratios = moves.map((s) => s.reach / body.span)
   const mean = ratios.reduce((a, b) => a + b, 0) / ratios.length
   const max = Math.max(...ratios)
-  const grip = moves.reduce((a, s) => a + Math.max(0, HOLD_TYPES[holds[s.to].type]?.penalty ?? 0), 0) / moves.length
+  const grip = moves.reduce((a, s) => a + Math.max(0, typePenalty(holds[s.to])), 0) / moves.length
   const dynos = moves.filter((s) => s.dyno).length
   const v = (mean - 0.3) / 0.045 + Math.max(0, (max - 0.6) / 0.045) * 0.3 + dynos + grip * 1.5
   return Math.max(0, Math.min(10, Math.round(v)))

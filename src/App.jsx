@@ -330,15 +330,16 @@ export default function App() {
       holds.map((h) => {
         if (h.type) return h // 직접 고친 종류가 우선
         if (h.volume) return { ...h, type: 'volume' }
-        let ml = mlTypes[holdKey(h)]
-        // 볼륨은 크기로 판단하는 게 더 확실함: 보통 크기 홀드를 AI가 볼륨이라 하면 볼륨을 뺀 종류 중 가장 높은 것을 씀
-        if (ml?.label === 'volume' && ml.probs) {
+        const ml = mlTypes[holdKey(h)]
+        // 볼륨은 모양(다각형 윤곽)으로만 판정. AI 확률에서 볼륨을 빼고 나머지를 다시 합 1로 맞춰 분포 전체를 넘김
+        // (예전: 볼륨이면 2등 하나만 → 큰 저그가 크림프·슬로퍼로 바뀌던 원인)
+        if (ml?.probs) {
           const rest = Object.entries(ml.probs).filter(([l]) => l !== 'volume')
           const sum = rest.reduce((a, [, v]) => a + v, 0) || 1
-          const [label, v] = rest.sort((a, b) => b[1] - a[1])[0]
-          ml = { label, prob: v / sum }
+          const probs = Object.fromEntries(rest.map(([l, v]) => [l, v / sum]))
+          const [label, prob] = Object.entries(probs).sort((a, b) => b[1] - a[1])[0]
+          if (prob >= ML_MIN) return { ...h, type: label, probs, ml: { label, prob, probs } }
         }
-        if (ml && ml.prob >= ML_MIN) return { ...h, type: ml.label, ml }
         return { ...h, type: estimateHoldType(h, normalSize) }
       }),
     [holds, normalSize, mlTypes],
@@ -382,7 +383,7 @@ export default function App() {
     if (mode === 'edit') {
       // 가까운 홀드는 제거, 빈 곳은 홀드 추가
       if (nearest.d < 0.035) setHolds(holds.filter((_, i) => i !== nearest.i))
-      else setHolds([...holds, { x: nx, y: ny, size: normalSize, type: 'jug' }])
+      else setHolds([...holds, { x: nx, y: ny, size: normalSize }]) // 종류는 AI·크기 규칙으로 정함(예전 기본값 저그 제거)
     } else if (mode === 'type') {
       // 홀드를 누를 때마다 종류가 바뀜
       if (nearest.d < 0.06) {
@@ -711,7 +712,12 @@ export default function App() {
                       <button className="pill move" onClick={() => openTerm('move', moveKey)}>동작 · {MOVES[moveKey].name}</button>
                     )}
                     {!isFoot && step?.holdType && HOLD_TYPES[step.holdType] && (
-                      <button className="pill hold" onClick={() => openTerm('hold', step.holdType)}>홀드 · {HOLD_TYPES[step.holdType].name}{stepMl ? ` · AI ${Math.round(stepMl.prob * 100)}%` : ''}</button>
+                      <button className="pill hold" onClick={() => openTerm('hold', step.holdType)}>홀드 · {HOLD_TYPES[step.holdType].name}{stepMl ? ` · AI ${Math.round(stepMl.prob * 100)}%` : ''}
+                        {stepMl?.probs && (() => {
+                          // 2등이 15% 이상이면 함께 보여줌(애매한 홀드를 한 종류로 단정하지 않음)
+                          const [, second] = Object.entries(stepMl.probs).sort((a, b) => b[1] - a[1])
+                          return second && second[1] >= 0.15 ? ` / ${HOLD_TYPES[second[0]]?.name ?? second[0]} ${Math.round(second[1] * 100)}%` : ''
+                        })()}</button>
                     )}
                     {fig?.feetInfo.map((f) => (
                       <button key={f.side} className="pill foot" onClick={() => openTerm(f.kind === 'flag' ? 'move' : 'foot', f.kind === 'flag' ? 'flag' : f.kind)}>
