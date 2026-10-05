@@ -200,9 +200,9 @@ function usePoseTween(target, ms = 700) {
 }
 
 // 저장소의 현재 자세(2D)와 그 3D 좌표를 받아 children(p, p3)를 그림
-function LivePose({ store, feetInfo, heightM, grips, children }) {
+function LivePose({ store, feetInfo, heightM, grips, anchors, children }) {
   const p = useSyncExternalStore(store.subscribe, store.get)
-  const p3 = useMemo(() => (p ? pose3d(p, heightM, feetInfo, grips) : null), [p, heightM, feetInfo, grips])
+  const p3 = useMemo(() => (p ? pose3d(p, heightM, feetInfo, grips, anchors) : null), [p, heightM, feetInfo, grips, anchors])
   return p && p3 ? children(p, p3) : null
 }
 
@@ -610,11 +610,14 @@ export default function App() {
   const dynoCount = plan?.route?.steps.filter((s) => s.dyno).length ?? 0
   const fig = frame.fig ?? null
   // 두 손이 잡은 홀드의 종류와 입체 크기(손을 홀드 표면의 잡는 자리에 놓는 데 씀)
+  const prevFig = fi > 0 ? frames[fi - 1]?.fig : null
+  // 손발이 잡고 있는 자리: 이전·지금 자세의 관절 좌표(3D에서 공중에 뜬 손발과 홀드를 잡은 손발을 구분)
+  const poseAnchors = useMemo(() => [fig?.p, prevFig?.p].filter(Boolean), [fig, prevFig])
   const handGrips = useMemo(() => {
     if (!fig || !plan?.m) return null
-    const at = (pt) => {
+    const at = (pt, fg = fig) => {
       let best = null
-      for (const id of fig.hands) {
+      for (const id of fg.hands) {
         const h = plan.m[id]
         const d = Math.hypot(h.mx - pt.x, h.my - pt.y)
         if (!best || d < best.d) best = { d, h }
@@ -627,8 +630,11 @@ export default function App() {
       const ry = near ? h3.ry : 0.05
       return { type, hold: { mx: best.h.mx, my: best.h.my, rx, ry, depth: holdProfile(type, rx, ry).depth, base: near ? h3.base : 0 } }
     }
-    return { L: at(fig.p.hl), R: at(fig.p.hr) }
-  }, [fig, plan, holds3d])
+    // 이전 자세와 지금 자세에서 잡은 홀드 모두(애니메이션 중 손마다 가까운 것을 씀)
+    const list = [at(fig.p.hl), at(fig.p.hr)]
+    if (prevFig) list.push(at(prevFig.p.hl, prevFig), at(prevFig.p.hr, prevFig))
+    return list.filter(Boolean)
+  }, [fig, prevFig, plan, holds3d])
   const isFoot = frame.k === 'foot'
   // 발 홀드 순서: 전체 경로를 따라가며 발이 처음 딛는 홀드에 발1, 발2 … 번호를 붙임
   const footOrder = useMemo(() => {
@@ -769,7 +775,7 @@ export default function App() {
             ) : view3d && fig ? (
               <div className="wall wall3d" style={{ width: fit.w, height: fit.h }}>
                 <Suspense fallback={<div className="banner">3D 불러오는 중…</div>}>
-                  <LivePose store={poseStore} feetInfo={fig.feetInfo} heightM={height / 100} grips={handGrips}>
+                  <LivePose store={poseStore} feetInfo={fig.feetInfo} heightM={height / 100} grips={handGrips} anchors={poseAnchors}>
                     {(_, p3) => <View3D photoUrl={photo.url} wallW={wallWidth} wallH={wallWidth / photo.aspect} holds={holds3d} p3={p3} handTypes={handTypes} smear={smearSides} heightM={height / 100} hard={step?.hard} />}
                   </LivePose>
                 </Suspense>
@@ -800,7 +806,7 @@ export default function App() {
                       )
                     })}
                   {fig && (
-                    <LivePose store={poseStore} feetInfo={fig.feetInfo} heightM={height / 100} grips={handGrips}>
+                    <LivePose store={poseStore} feetInfo={fig.feetInfo} heightM={height / 100} grips={handGrips} anchors={poseAnchors}>
                       {(p2, p3) => (
                         <>
                   {fig.feetInfo.map((f) =>
@@ -920,7 +926,7 @@ export default function App() {
                     <button className="nav" disabled={fi >= frames.length - 1} onClick={() => { setPlaying(false); setFrameIdx(fi + 1) }}>▶</button>
                   </div>
                   {fig && (
-                    <LivePose store={poseStore} feetInfo={fig.feetInfo} heightM={height / 100} grips={handGrips}>
+                    <LivePose store={poseStore} feetInfo={fig.feetInfo} heightM={height / 100} grips={handGrips} anchors={poseAnchors}>
                       {(_, p3) => <SideView p3={p3} feetInfo={fig.feetInfo} heightM={height / 100} />}
                     </LivePose>
                   )}

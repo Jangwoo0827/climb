@@ -34,9 +34,17 @@ export function handPose(type, wrist, elbow, side, heightM = 1.7, frame = null) 
   const sgn = side === 'L' ? 1 : -1
   let f
   let n
+  // 기본 방향(아래팔을 따라 뻗고 손등은 벽 밖)
+  const f0 = norm(v(wrist.x - elbow.x, wrist.y - elbow.y, wrist.z - elbow.z))
+  let n0 = norm(add(v(0, 0, 1), f0, -dot(v(0, 0, 1), f0)))
+  if (!isFinite(n0.x)) n0 = v(0, 0, 1)
+  n0 = rot(n0, f0, g.roll * D * sgn)
   if (frame) {
-    f = norm(frame.f)
-    n = norm(add(frame.n, f, -dot(frame.n, f))) // f에 수직이 되게
+    // 잡는 자리 방향을 w(홀드에 가까운 정도)만큼 섞음: 홀드로 다가가며 손 모양이 서서히 바뀜
+    const w = frame.w ?? 1
+    f = norm(add(scale(f0, 1 - w), frame.f, w))
+    const nm = add(scale(n0, 1 - w), frame.n, w)
+    n = norm(add(nm, f, -dot(nm, f))) // f에 수직이 되게
   } else {
     f = norm(v(wrist.x - elbow.x, wrist.y - elbow.y, wrist.z - elbow.z))
     n = v(0, 0, 1)
