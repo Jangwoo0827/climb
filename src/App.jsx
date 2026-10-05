@@ -43,6 +43,16 @@ function makeDemoWall() {
   return c
 }
 
+// 홀드 h가 사실 볼륨 vol 자체인지: 중심이 볼륨 상자 안이고, 상자 넓이가 볼륨 상자의 35% 이상(볼륨 위의 작은 홀드는 아님)
+function isVolumeItself(h, vol) {
+  if (h === vol || h.type === 'volume' || !vol.box) return false
+  const b = vol.box
+  if (h.x < b.x0 || h.x > b.x1 || h.y < b.y0 || h.y > b.y1) return false
+  const area = (bx) => (bx.x1 - bx.x0) * (bx.y1 - bx.y0)
+  const ha = h.box ? area(h.box) : h.size / 0.785
+  return ha >= 0.35 * area(b)
+}
+
 // 벽 사진 위에 그리는 졸라맨(2.5D): 벽에서 먼 부위는 살짝 비스듬히 옮기고 굵게, 벽 쪽 부위는 가늘게
 function Stickman({ p3, sv, headR, hard, label, u, heightM, handTypes }) {
   const P = Object.fromEntries(Object.entries(p3).map(([k, q]) => [k, project(q)]))
@@ -380,7 +390,7 @@ export default function App() {
     // 클라우드 검출이 있으면 그 상자 안에 중심이 있는 볼륨만 인정(사람·천장·벽 구조물을 볼륨으로 잘못 잡지 않게)
     const inCloudBox = (v) => cl.holds.some((c) => v.x >= c.box.x0 && v.x <= c.box.x1 && v.y >= c.box.y0 && v.y <= c.box.y1)
     const vols = detectVolumes(photo.img).filter((v) => !found.some((f) => Math.hypot((f.x - v.x) * photo.aspect, f.y - v.y) < 0.04) && (!useCloud || inCloudBox(v)))
-    return [...found, ...vols]
+    return [...found.filter((f) => !vols.some((v) => isVolumeItself(f, v))), ...vols]
   }
   // 사진을 열면 볼트 구멍 격자로 벽 너비를 추정
   useEffect(() => {
@@ -446,7 +456,9 @@ export default function App() {
         if (hit >= 0) setHolds(holds.filter((_, i) => i !== hit))
         return
       }
-      setHolds([...holds, { x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2, size: (b.x1 - b.x0) * (b.y1 - b.y0) * 0.785, box: b, type: 'volume', manualVolume: true }])
+      const vol = { x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2, size: (b.x1 - b.x0) * (b.y1 - b.y0) * 0.785, box: b, type: 'volume', manualVolume: true }
+      // 이 볼륨을 일반 홀드로 잡아 둔 것(볼륨 범위 안에 중심이 있고 볼륨 넓이의 35% 이상인 큰 덩어리)은 같은 물체라 지움
+      setHolds([...holds.filter((h) => !isVolumeItself(h, vol)), vol])
     }
   }
 
@@ -545,7 +557,9 @@ export default function App() {
       return `rgb(${data[i]},${data[i + 1]},${data[i + 2]})`
     }
     const out = []
+    const vols = typedHolds.filter((h) => h.type === 'volume')
     for (const hd of [...typedHolds, ...allHolds]) {
+      if (vols.some((v) => isVolumeItself(hd, v))) continue // 볼륨을 홀드로도 잡은 것: 볼륨으로만 그림
       // 같은 홀드를 두 번 그리지 않음: 이미 넣은 (볼륨이 아닌) 홀드의 상자 안에 중심이 있으면 건너뜀
       const isVol = hd.type === 'volume'
       if (out.some((o) => !o.volume && !isVol && (o.box ? hd.x >= o.box.x0 && hd.x <= o.box.x1 && hd.y >= o.box.y0 && hd.y <= o.box.y1 : Math.hypot((o.x - hd.x) * photo.aspect, o.y - hd.y) < 0.02))) continue
