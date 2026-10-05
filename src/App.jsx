@@ -310,6 +310,8 @@ export default function App() {
   // 벽 펴기: 면마다 네 모서리를 맞추면 정면에서 본 평평한 벽 사진으로 바꿈(천장·바닥은 잘려 나감)
   const [straight, setStraight] = useState(null) // { faces: [[{x,y}x4], ...], sel: 고른 면 번호, drag } | null
   const [wallFaces, setWallFaces] = useState(null) // 3D 벽으로 지정한 면들(사진 좌표). 없으면 평평한 벽
+  // 사진을 찍은 카메라의 화각(긴 변 방향, 도). 면의 기울기 계산에 씀. 폰 기본 카메라 약 67°, 광각은 더 크고 확대는 작음
+  const [fovDeg, setFovDeg] = useState(67)
   const onStraightPointer = (e) => {
     if (!straight) return
     const r = boxRef.current.getBoundingClientRect()
@@ -600,7 +602,8 @@ export default function App() {
       .map((a) => ({ mx: a.x * wallWidth, my: (1 - a.y) * wallH, r: Math.sqrt((a.size * wallWidth * wallH) / Math.PI) }))
   }, [photo, allHolds, usable, wallWidth])
   // 3D 벽 모델(꺾인 면들): 면을 지정했을 때만
-  const wall3d = useMemo(() => (photo && wallFaces ? buildWall3D(wallFaces, photo.aspect, wallWidth) : null), [photo, wallFaces, wallWidth])
+  // 초점거리(사진 긴 변 = 1) = 0.5 / tan(화각/2)
+  const wall3d = useMemo(() => (photo && wallFaces ? buildWall3D(wallFaces, photo.aspect, wallWidth, 0.5 / Math.tan((fovDeg * Math.PI) / 360)) : null), [photo, wallFaces, wallWidth, fovDeg])
   // 3D 보기에서 벽 위에 튀어나오게 그릴 홀드: 루트 홀드 + 그 밖에 검출된 모든 홀드. 색은 사진에서, 크기는 검출 상자·넓이로
   const holds3d = useMemo(() => {
     if (!photo) return []
@@ -848,6 +851,13 @@ export default function App() {
                   )}
                 </Suspense>
                 <div className="hint3d">드래그로 돌리기 · 휠로 확대 · 하늘색 발 = 홀드, 주황 발 = 벽 밀기</div>
+                {wall3d && (
+                  <label className="fov3d" title="사진을 찍은 카메라의 화각. 벽 면이 실제보다 많이(적게) 꺾여 보이면 조절하세요">
+                    <span>카메라 화각 {fovDeg}°</span>
+                    <input type="range" min="30" max="100" step="1" value={fovDeg} onChange={(e) => setFovDeg(Number(e.target.value))} />
+                    <small>광각일수록 크게 · 확대·잘라낸 사진은 작게</small>
+                  </label>
+                )}
               </div>
             ) : (
               <div className={mode === 'volume' || straight ? 'wall drawing' : 'wall'} ref={boxRef} onClick={straight ? undefined : onTap} onPointerDown={straight ? onStraightPointer : onVolPointer} onPointerMove={straight ? onStraightPointer : onVolPointer} onPointerUp={straight ? onStraightPointer : onVolPointer} style={{ width: fit.w, height: fit.h }}>
