@@ -265,7 +265,8 @@ export default function App() {
   const [holds, setHolds] = useState([])
   const [frameIdx, setFrameIdx] = useState(0) // 0=출발 자세, 이후 동작별 프레임(점프는 공중+착지 2프레임)
   const [feetFree, setFeetFree] = useState(true) // 발 자유: 다른 색 홀드도 발로 씀
-  const [mode, setMode] = useState('edit') // edit | start | finish | type
+  const [mode, setMode] = useState('edit') // edit | start | finish | type | volume
+  const [drag, setDrag] = useState(null) // 볼륨 모드에서 끌어 그리는 중인 범위 {x0,y0,x1,y1}(0~1)
   const [term, setTerm] = useState({ kind: 'move', key: null })
   const boxRef = useRef(null)
   const stageRef = useRef(null)
@@ -397,6 +398,32 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cloud])
 
+  // 볼륨 직접 지정: 벽 위를 끌어 범위를 그리면 그 범위가 볼륨(발 자리)이 됨. 짧게 누르면 그 자리의 직접 그린 볼륨을 지움
+  const normPt = (e) => {
+    const r = boxRef.current.getBoundingClientRect()
+    return { x: Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), y: Math.min(1, Math.max(0, (e.clientY - r.top) / r.height)) }
+  }
+  const onVolPointer = (e) => {
+    if (mode !== 'volume' || !photo || !target) return
+    const p = normPt(e)
+    if (e.type === 'pointerdown') {
+      e.currentTarget.setPointerCapture?.(e.pointerId)
+      setDrag({ x0: p.x, y0: p.y, x1: p.x, y1: p.y })
+    } else if (e.type === 'pointermove' && drag) setDrag({ ...drag, x1: p.x, y1: p.y })
+    else if (e.type === 'pointerup' && drag) {
+      const b = { x0: Math.min(drag.x0, p.x), y0: Math.min(drag.y0, p.y), x1: Math.max(drag.x0, p.x), y1: Math.max(drag.y0, p.y) }
+      setDrag(null)
+      setFrameIdx(0)
+      // 거의 안 끌었으면: 누른 자리를 덮는 직접 그린 볼륨을 지움
+      if ((b.x1 - b.x0) * photo.aspect < 0.02 && b.y1 - b.y0 < 0.02) {
+        const hit = holds.findIndex((h) => h.manualVolume && p.x >= h.box.x0 && p.x <= h.box.x1 && p.y >= h.box.y0 && p.y <= h.box.y1)
+        if (hit >= 0) setHolds(holds.filter((_, i) => i !== hit))
+        return
+      }
+      setHolds([...holds, { x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2, size: (b.x1 - b.x0) * (b.y1 - b.y0) * 0.785, box: b, type: 'volume', manualVolume: true }])
+    }
+  }
+
   const onTap = (e) => {
     if (!photo) return
     const r = boxRef.current.getBoundingClientRect()
@@ -417,6 +444,7 @@ export default function App() {
       { i: -1, d: Infinity },
     )
     setFrameIdx(0)
+    if (mode === 'volume') return // 볼륨 모드는 끌어서 그리기(onVolPointer)로 처리
     if (mode === 'edit') {
       // 가까운 홀드는 제거, 빈 곳은 홀드 추가
       if (nearest.d < 0.035) setHolds(holds.filter((_, i) => i !== nearest.i))
@@ -625,9 +653,12 @@ export default function App() {
                 <div className="hint3d">드래그로 돌리기 · 휠로 확대 · 하늘색 발 = 홀드, 주황 발 = 벽 밀기</div>
               </div>
             ) : (
-              <div className="wall" ref={boxRef} onClick={onTap} style={{ width: fit.w, height: fit.h }}>
+              <div className={mode === 'volume' ? 'wall drawing' : 'wall'} ref={boxRef} onClick={onTap} onPointerDown={onVolPointer} onPointerMove={onVolPointer} onPointerUp={onVolPointer} style={{ width: fit.w, height: fit.h }}>
                 <img src={photo.url} alt="벽" draggable="false" />
                 <svg viewBox={`0 0 ${photo.aspect} 1`} preserveAspectRatio="none">
+                  {drag && (
+                    <rect x={Math.min(drag.x0, drag.x1) * photo.aspect} y={Math.min(drag.y0, drag.y1)} width={Math.abs(drag.x1 - drag.x0) * photo.aspect} height={Math.abs(drag.y1 - drag.y0)} fill="rgba(176,224,255,0.25)" stroke="#b0e0ff" strokeWidth={2.5 * u} />
+                  )}
                   {showBoxes && cloud.status === 'ok' && cloud.holds.map((c, i) => (
                     <rect key={'cb' + i} x={c.box.x0 * photo.aspect} y={c.box.y0} width={(c.box.x1 - c.box.x0) * photo.aspect} height={c.box.y1 - c.box.y0} fill="none" stroke="#ff4dff" strokeWidth={1.5 * u} strokeDasharray={`${4 * u} ${3 * u}`} opacity={0.5 + 0.5 * (c.conf ?? 1)} />
                   ))}
@@ -719,6 +750,7 @@ export default function App() {
                   })}
                 </svg>
                 {!target && <div className="banner">👆 따라갈 루트의 홀드 색을 눌러주세요</div>}
+                {target && mode === 'volume' && <div className="banner">🔷 볼륨을 손가락으로 대각선으로 끌어 감싸세요 · 그린 볼륨을 짧게 누르면 지워요</div>}
               </div>
             )}
           </div>
@@ -744,6 +776,7 @@ export default function App() {
               <button className={mode === 'start' ? 'on start' : ''} onClick={() => setMode('start')}>🟢 시작</button>
               <button className={mode === 'finish' ? 'on finish' : ''} onClick={() => setMode('finish')}>🏁 끝</button>
               <button className={mode === 'type' ? 'on' : ''} onClick={() => setMode('type')}>🏷 종류</button>
+              <button className={mode === 'volume' ? 'on' : ''} onClick={() => setMode('volume')} title="벽 위를 끌어 볼륨 범위를 그려요. 짧게 누르면 지워요">🔷 볼륨</button>
               <button className={feetFree ? 'on feet' : ''} onClick={() => setFeetFree(!feetFree)} title="다른 색 홀드도 발로 쓰기">🦶 발 자유</button>
             </div>
           )}

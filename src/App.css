@@ -170,3 +170,4 @@ main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .hint3d { position: absolute; left: 8px; bottom: 8px; font-size: 11px; color: #cfd6e4; background: rgba(0, 0, 0, 0.5); padding: 3px 8px; border-radius: 6px; pointer-events: none; }
 .detect-src { position: absolute; top: 8px; right: 8px; z-index: 5; padding: 4px 10px; border-radius: 999px; background: rgba(20, 23, 31, 0.85); color: #cfd6e4; font-size: 12px; pointer-events: none; }
 .detect-src.click { pointer-events: auto; cursor: pointer; }
+.wall.drawing { touch-action: none; cursor: crosshair; }
