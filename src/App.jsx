@@ -6,6 +6,7 @@ import { buildSequence } from './utils/stickman.js'
 import { blendPose, moversOf } from './utils/animate.js'
 import { TERM_NAMES, scoreFrames } from './utils/reward.js'
 import { pose3d, project } from './utils/depth.js'
+import { estimateScaleFromImage, isReliable } from './utils/scale.js'
 import { handPose } from './utils/hand.js'
 
 const View3D = lazy(() => import('./View3D.jsx'))
@@ -194,7 +195,7 @@ function LivePose({ store, feetInfo, heightM, children }) {
   return p && p3 ? children(p, p3) : null
 }
 
-const defaultBody = { height: '165', wingspan: '165', flexibility: '3', wall: '3.5' }
+const defaultBody = { height: '165', wingspan: '165', flexibility: '3', wall: '3.5', bolt: '20' }
 const pos = (s, d) => {
   const v = parseFloat(s)
   return Number.isFinite(v) && v > 0 ? v : d
@@ -279,6 +280,10 @@ export default function App() {
   const flexibility = anyNum(raw.flexibility, 3)
   const wallWidth = pos(raw.wall, 3.5)
   const setR = (key, v) => setRaw((r) => ({ ...r, [key]: v }))
+  // 벽 너비 자동 추정(볼트 구멍 격자): 사진을 열면 격자 간격(px)을 재고, 「볼트 구멍 간격」(cm)으로 벽 너비를 계산해 채움
+  const [scaleEst, setScaleEst] = useState(null) // { spacingPx, imgW, ok } | null
+  const boltM = pos(raw.bolt, 20) / 100
+  const autoWall = scaleEst?.ok ? (scaleEst.imgW / scaleEst.spacingPx) * boltM : null
 
   const loadCanvasOrImage = (source, w, h, url) => {
     setPhoto({ url, img: sampleImage(source, w, h), aspect: w / h })
@@ -376,6 +381,26 @@ export default function App() {
     const vols = detectVolumes(photo.img).filter((v) => !found.some((f) => Math.hypot((f.x - v.x) * photo.aspect, f.y - v.y) < 0.04) && (!useCloud || inCloudBox(v)))
     return [...found, ...vols]
   }
+  // 사진을 열면 볼트 구멍 격자로 벽 너비를 추정
+  useEffect(() => {
+    if (!photo) return setScaleEst(null)
+    let cancelled = false
+    const im = new Image()
+    im.onload = () => {
+      if (cancelled) return
+      const r = estimateScaleFromImage(im)
+      setScaleEst(r ? { spacingPx: r.spacingPx, imgW: r.imgW, ok: isReliable(r) } : { ok: false })
+    }
+    im.src = photo.url
+    return () => {
+      cancelled = true
+    }
+  }, [photo])
+  // 믿을 만한 추정이 나오면(또는 볼트 간격을 바꾸면) 벽 너비 칸을 자동으로 채움
+  useEffect(() => {
+    if (autoWall) setR('wall', autoWall.toFixed(1))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoWall])
   // 사진을 열면 클라우드 검출을 시작(기다리는 동안에도 색 검출로 바로 쓸 수 있음)
   useEffect(() => {
     if (!photo) return
@@ -628,6 +653,11 @@ export default function App() {
       {tab === 'course' && (
         <main className="course">
           <div className="stage" ref={stageRef}>
+            {photo && scaleEst && (
+              <div className="scale-src" title="사진 속 벽 너비(볼트 구멍 격자로 자동 계산, 「내 몸」 탭에서 고칠 수 있어요)">
+                📏 {autoWall && Math.abs(wallWidth - autoWall) < 0.06 ? `벽 너비 ${wallWidth.toFixed(1)}m 자동` : `벽 너비 ${wallWidth.toFixed(1)}m (직접 입력)`}
+              </div>
+            )}
             {photo && (
               <div className={cloud.status === 'ok' ? 'detect-src click' : 'detect-src'} title={cloud.status === 'ok' ? '눌러서 AI가 찾은 상자 보기/숨기기' : '홀드 위치를 찾은 방법'} onClick={() => cloud.status === 'ok' && setShowBoxes(!showBoxes)}>
                 {cloud.status === 'loading' ? '☁️ AI 검출 중…' : holdsSrc === 'cloud' || (!target && cloud.status === 'ok') ? `☁️ AI 검출 ${cloud.holds.length}개 ${showBoxes ? '▣' : '□'}` : cloud.status === 'fail' ? `🎨 색 검출 (AI 실패: ${cloud.error})` : '🎨 색 검출'}
@@ -871,7 +901,14 @@ export default function App() {
               <NumField label="키" unit="cm" value={raw.height} onChange={(v) => setR('height', v)} />
               <NumField label="팔 벌린 길이" unit="cm" value={raw.wingspan} onChange={(v) => setR('wingspan', v)} hint="양팔을 옆으로 벌린 끝~끝" />
               <NumField label="유연성" unit="점" value={raw.flexibility} onChange={(v) => setR('flexibility', v)} hint="발을 높이 올리는 정도(하이 스텝), 기준 3" />
-              <NumField label="사진 속 벽 너비" unit="m" value={raw.wall} onChange={(v) => setR('wall', v)} />
+              <NumField
+                label="사진 속 벽 너비"
+                unit="m"
+                value={raw.wall}
+                onChange={(v) => setR('wall', v)}
+                hint={!photo ? '사진을 열면 볼트 구멍으로 자동 계산해요' : autoWall ? `자동 계산 ${autoWall.toFixed(1)}m (볼트 구멍 격자, 직접 고쳐도 돼요)` : scaleEst ? '볼트 구멍 격자를 못 찾았어요. 직접 넣어 주세요' : '계산 중…'}
+              />
+              <NumField label="볼트 구멍 간격" unit="cm" value={raw.bolt} onChange={(v) => setR('bolt', v)} hint="벽에 뚫린 홀드 볼트 구멍 사이 거리. 암장마다 달라요(보통 약 20cm)" />
               <label className="field">
                 <span>Roboflow API 키</span>
                 <div className="inp">
