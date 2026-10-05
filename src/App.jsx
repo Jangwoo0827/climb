@@ -356,7 +356,8 @@ export default function App() {
       const ext = volumeExtent(h)
       if (h.type === 'volume' && ext) {
         for (const pt of [ext.top, ext.left, ext.right, ext.bottom, { x: h.x, y: h.y }]) {
-          out.push({ x: pt.x, y: pt.y, size: normalSize, type: 'volume', parent: i, role: h.role })
+          // 볼륨은 발로 딛는 자리(손으로 잡기는 거의 불가능). 시작·끝으로 직접 지정한 볼륨만 손으로도 씀
+          out.push({ x: pt.x, y: pt.y, size: normalSize, type: 'volume', parent: i, role: h.role, footOnly: !h.role })
         }
       } else out.push({ ...h, parent: i })
     })

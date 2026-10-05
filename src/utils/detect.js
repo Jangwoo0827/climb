@@ -412,12 +412,36 @@ export function detectAllHolds(img) {
 // - fit: 경계 픽셀이 단순화한 다각형 변에서 평균 얼마나 떨어졌는지(덩어리 크기 대비). 곧은 모서리면 작음
 // - solidity: 덩어리 넓이 / 볼록 껍질 넓이. 볼륨은 꽉 찬 볼록 도형
 function polygonShape(label, b, w) {
+  // 덩어리 안의 구멍(볼륨 위에 붙은 다른 색 홀드 자리)을 메워 바깥 테두리만 봄:
+  // 상자 테두리에서 덩어리가 아닌 곳을 따라 채워 나가고, 닿지 못한 곳은 구멍으로 보고 덩어리에 포함
+  const bw = b.x1 - b.x0 + 3
+  const bh = b.y1 - b.y0 + 3
+  const inBlob = (x, y) => x >= b.x0 && x <= b.x1 && y >= b.y0 && y <= b.y1 && label[y * w + x] === b.id
+  const outside = new Uint8Array(bw * bh) // 상자를 1픽셀 넓힌 격자, 1 = 바깥과 이어진 빈 곳
+  const st = [0]
+  outside[0] = 1
+  while (st.length) {
+    const q = st.pop()
+    const qx = q % bw
+    const qy = (q / bw) | 0
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = qx + dx
+      const ny = qy + dy
+      if (nx < 0 || ny < 0 || nx >= bw || ny >= bh) continue
+      const k = ny * bw + nx
+      if (outside[k] || inBlob(b.x0 - 1 + nx, b.y0 - 1 + ny)) continue
+      outside[k] = 1
+      st.push(k)
+    }
+  }
+  const filled = (x, y) => x >= b.x0 - 1 && y >= b.y0 - 1 && x <= b.x1 + 1 && y <= b.y1 + 1 && !outside[(y - b.y0 + 1) * bw + (x - b.x0 + 1)]
+  let filledArea = 0
   const pts = []
   for (let y = b.y0; y <= b.y1; y++)
     for (let x = b.x0; x <= b.x1; x++) {
-      const p = y * w + x
-      if (label[p] !== b.id) continue
-      if (x === b.x0 || x === b.x1 || y === b.y0 || y === b.y1 || label[p - 1] !== b.id || label[p + 1] !== b.id || label[p - w] !== b.id || label[p + w] !== b.id) pts.push([x, y])
+      if (!filled(x, y)) continue
+      filledArea++
+      if (!filled(x - 1, y) || !filled(x + 1, y) || !filled(x, y - 1) || !filled(x, y + 1)) pts.push([x, y])
     }
   if (pts.length < 8) return { verts: 99, solidity: 0, fit: 1 }
   const sorted = [...pts].sort((a, c) => a[0] - c[0] || a[1] - c[1])
@@ -478,7 +502,7 @@ function polygonShape(label, b, w) {
     for (let k = 0; k < poly.length; k++) m = Math.min(m, segD(q, poly[k], poly[(k + 1) % poly.length]))
     fs += m
   }
-  return { verts: poly.length, solidity: b.area / hullArea, fit: fs / pts.length / Math.sqrt(hullArea), poly }
+  return { verts: poly.length, solidity: filledArea / hullArea, fit: fs / pts.length / Math.sqrt(hullArea), poly }
 }
 
 // 다각형 볼륨 판정 기준
