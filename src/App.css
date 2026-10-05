@@ -179,6 +179,3 @@ main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .straight-bar span { flex: 1 1 100%; }
 .straight-bar button { padding: 6px 10px; border-radius: 8px; border: 0; background: #2a3040; color: #fff; font-weight: 700; cursor: pointer; }
 .straight-bar button.primary { background: #ffd400; color: #111; }
-.fov3d { position: absolute; right: 8px; bottom: 8px; z-index: 6; display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border-radius: 10px; background: rgba(20, 23, 31, 0.88); color: #fff; font-size: 12px; width: 190px; }
-.fov3d input { width: 100%; accent-color: #ffd400; }
-.fov3d small { color: #9aa3b5; font-size: 10px; }
