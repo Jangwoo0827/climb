@@ -12,7 +12,7 @@ const BONES = [
 ]
 const UP = new THREE.Vector3(0, 1, 0)
 
-export default function View3D({ photoUrl, wallW, wallH, p3, handTypes, smear, heightM, hard }) {
+export default function View3D({ photoUrl, wallW, wallH, holds, p3, handTypes, smear, heightM, hard }) {
   const hostRef = useRef(null)
   const ref = useRef(null) // { renderer, scene, camera, controls, body }
 
@@ -71,6 +71,43 @@ export default function View3D({ photoUrl, wallW, wallH, p3, handTypes, smear, h
       host.removeChild(renderer.domElement)
     }
   }, [photoUrl, wallW, wallH])
+
+  // 홀드: 벽에서 튀어나온 반쪽 타원체(사진 속 색·크기). 볼륨은 벽에서 솟은 사각뿔
+  useEffect(() => {
+    const st = ref.current
+    if (!st || !holds) return
+    if (st.holdGroup) {
+      st.scene.remove(st.holdGroup)
+      st.holdGroup.traverse((o) => {
+        o.geometry?.dispose()
+        o.material?.dispose()
+      })
+    }
+    const g = new THREE.Group()
+    const sph = new THREE.SphereGeometry(1, 20, 14, 0, Math.PI * 2, 0, Math.PI / 2) // 반구(+y쪽) → x축으로 돌려 +z(벽 밖)로
+    const pyr = new THREE.ConeGeometry(1, 1, 4, 1)
+    for (const h of holds) {
+      const mat = new THREE.MeshStandardMaterial({ color: h.color, roughness: 0.75 })
+      if (h.volume) {
+        const depth = Math.min(0.6, Math.max(h.rx, h.ry) * 0.7)
+        const m = new THREE.Mesh(pyr, mat)
+        m.rotation.x = Math.PI / 2 // 뿔 끝이 벽 밖(+z)
+        m.rotation.y = Math.PI / 4
+        m.scale.set(h.rx * 1.41, depth, h.ry * 1.41)
+        m.position.set(h.mx, h.my, depth / 2)
+        g.add(m)
+      } else {
+        const depth = Math.min(0.12, Math.max(0.02, Math.min(h.rx, h.ry) * 0.8))
+        const m = new THREE.Mesh(sph, mat)
+        m.rotation.x = Math.PI / 2
+        m.scale.set(h.rx, depth, h.ry)
+        m.position.set(h.mx, h.my, 0)
+        g.add(m)
+      }
+    }
+    st.scene.add(g)
+    st.holdGroup = g
+  }, [holds, photoUrl, wallW, wallH])
 
   // 자세가 바뀔 때마다: 메시는 처음 한 번만 만들고(애니메이션 중 매 프레임 새로 만들면 렉) 위치·방향·길이만 갱신
   useEffect(() => {

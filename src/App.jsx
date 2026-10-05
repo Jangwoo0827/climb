@@ -524,7 +524,36 @@ export default function App() {
 
   const nSteps = plan?.route?.steps.length ?? 0
   // 프레임: 출발 → (발 옮기기 → 손 옮기기)… 한 프레임에 팔다리 하나만 움직임
-  const frames = useMemo(() => (plan?.route ? buildSequence(plan.route, plan.m, model, height / 100) : []), [plan, model, height])
+  // 경로에 쓰지 않는 다른 색 홀드(미터 단위 위치와 반지름): 벽 밀기 발이 그 위에 놓이지 않게 자세 계산에 넘김
+  const obstacles = useMemo(() => {
+    if (!photo) return []
+    const wallH = wallWidth / photo.aspect
+    return allHolds
+      .filter((a) => !usable.some((u) => Math.hypot((u.x - a.x) * photo.aspect, u.y - a.y) < 0.03))
+      .map((a) => ({ mx: a.x * wallWidth, my: (1 - a.y) * wallH, r: Math.sqrt((a.size * wallWidth * wallH) / Math.PI) }))
+  }, [photo, allHolds, usable, wallWidth])
+  // 3D 보기에서 벽 위에 튀어나오게 그릴 홀드: 루트 홀드 + 그 밖에 검출된 모든 홀드. 색은 사진에서, 크기는 검출 상자·넓이로
+  const holds3d = useMemo(() => {
+    if (!photo) return []
+    const wallH = wallWidth / photo.aspect
+    const { w, h, data } = photo.img
+    const colorAt = (x, y) => {
+      const px = Math.min(w - 1, Math.max(0, Math.round(x * w)))
+      const py = Math.min(h - 1, Math.max(0, Math.round(y * h)))
+      const i = (py * w + px) * 4
+      return `rgb(${data[i]},${data[i + 1]},${data[i + 2]})`
+    }
+    const out = []
+    for (const hd of [...typedHolds, ...allHolds]) {
+      if (out.some((o) => Math.hypot((o.x - hd.x) * photo.aspect, o.y - hd.y) < 0.02)) continue
+      const b = hd.box
+      const rw = b ? ((b.x1 - b.x0) / 2) * wallWidth : Math.sqrt((hd.size * wallWidth * wallH) / Math.PI)
+      const rh = b ? ((b.y1 - b.y0) / 2) * wallH : rw
+      out.push({ x: hd.x, y: hd.y, mx: hd.x * wallWidth, my: (1 - hd.y) * wallH, rx: rw, ry: rh, color: colorAt(hd.x, hd.y), volume: hd.type === 'volume' })
+    }
+    return out
+  }, [photo, typedHolds, allHolds, wallWidth])
+  const frames = useMemo(() => (plan?.route ? buildSequence(plan.route, plan.m, model, height / 100, { obstacles }) : []), [plan, model, height, obstacles])
   // 강화학습 보상 명세로 채점한 프레임별 점수(자세 고를 때 쓴 것과 같은 채점기)
   const scores = useMemo(() => (frames.length && plan ? scoreFrames(frames, plan.m, height / 100) : null), [frames, plan, height])
   const fi = Math.min(frameIdx, Math.max(0, frames.length - 1))
@@ -677,7 +706,7 @@ export default function App() {
               <div className="wall wall3d" style={{ width: fit.w, height: fit.h }}>
                 <Suspense fallback={<div className="banner">3D 불러오는 중…</div>}>
                   <LivePose store={poseStore} feetInfo={fig.feetInfo} heightM={height / 100}>
-                    {(_, p3) => <View3D photoUrl={photo.url} wallW={wallWidth} wallH={wallWidth / photo.aspect} p3={p3} handTypes={handTypes} smear={smearSides} heightM={height / 100} hard={step?.hard} />}
+                    {(_, p3) => <View3D photoUrl={photo.url} wallW={wallWidth} wallH={wallWidth / photo.aspect} holds={holds3d} p3={p3} handTypes={handTypes} smear={smearSides} heightM={height / 100} hard={step?.hard} />}
                   </LivePose>
                 </Suspense>
                 <div className="hint3d">드래그로 돌리기 · 휠로 확대 · 하늘색 발 = 홀드, 주황 발 = 벽 밀기</div>

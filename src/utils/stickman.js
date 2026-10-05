@@ -79,7 +79,18 @@ function kneeAt(hipP, foot, l, side, down, maxY) {
   return m.y < k.y ? m : k
 }
 
-function makeSolver(holds, body, heightM) {
+function makeSolver(holds, body, heightM, obstacles = []) {
+  // 벽 밀기(스미어) 자리가 다른 색 홀드(obstacles: {mx, my, r} 미터) 위면 안 됨: 겹치면 옆·위아래로 조금씩 비켜 빈 벽을 찾음
+  const blocked = (p) => obstacles.some((o) => Math.hypot(p.x - o.mx, p.y - o.my) < o.r + 0.04)
+  const freeSpot = (p) => {
+    if (!blocked(p)) return p
+    for (const d of [0.05, 0.1, 0.15, 0.2])
+      for (const [dx, dy] of [[d, 0], [-d, 0], [0, -d], [0, d], [d, -d], [-d, -d]]) {
+        const q = { x: p.x + dx, y: p.y + dy }
+        if (q.y >= FOOT_CLEAR && !blocked(q)) return q
+      }
+    return null
+  }
   const sw = 0.23 * heightM // 어깨너비
   const arm = Math.max(0.3, (body.span - sw) / 2) // 팔 전체 길이
   const torso = 0.3 * heightM
@@ -222,10 +233,8 @@ function makeSolver(holds, body, heightM) {
         // 발 후보: 다리를 적당히 편 거리·엉덩이 아래쪽 방향 안의 홀드 전부 + 편한 자리 두 곳의 벽 밀기(스미어)
         const idealL = { x: hx - off, y: fy }
         const idealR = { x: hx + off, y: fy }
-        const cands = [
-          { p: idealL, c: 30, id: null }, // 벽 밀기는 밟을 홀드가 정말 없을 때만
-          { p: idealR, c: 30, id: null },
-        ]
+        // 벽 밀기는 밟을 홀드가 정말 없을 때만, 그리고 다른 색 홀드가 없는 빈 벽에만
+        const cands = [idealL, idealR].map(freeSpot).filter(Boolean).map((p) => ({ p, c: 30, id: null }))
         holds.forEach((h) => {
           if (h.id === L || h.id === R || h.my < FOOT_CLEAR) return
           const p = { x: h.mx, y: h.my }
@@ -442,8 +451,9 @@ const sameFoot = (a, b) => (a.id !== null ? a.id === b.id : b.id === null && dis
 // 경로 전체를 프레임으로 만듦. 한 프레임에는 팔다리 하나만 움직임(손 따로, 발 따로).
 // 손을 옮기기 전에 발을 먼저 한 발씩 올리고(발 먼저), 그 상태로 손이 안 닿으면 손을 먼저 옮기고 발을 따라 올림.
 // 반환: [{ k: 'start' | 'foot' | 'hand' | 'jump', i: 손 동작 번호(출발은 -1), side: 'L'|'R'(발 프레임), fig }]
-export function buildSequence(route, holds, body, heightM, { useReward = true } = {}) {
-  const { solve, pose, jumpPose } = makeSolver(holds, body, heightM)
+// obstacles: 경로에 안 쓰는 다른 색 홀드 위치({mx, my, r} 미터). 벽 밀기 발이 그 위에 놓이지 않게 함
+export function buildSequence(route, holds, body, heightM, { useReward = true, obstacles = [] } = {}) {
+  const { solve, pose, jumpPose } = makeSolver(holds, body, heightM, obstacles)
   const ids = (s) => [s.f1?.id, s.f2?.id].filter((v) => v !== null && v !== undefined)
   const fixed = (L, R, feet, prevHip, opts) => {
     const r = solve(L, R, prevHip, { ...opts, fixedFeet: feet })
