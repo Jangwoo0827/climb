@@ -218,3 +218,26 @@ export function volumeSurfaceZ(vol, x, y) {
   if (!isFinite(edge) || d >= edge) return 0
   return vol.height * (1 - d / edge)
 }
+
+// 볼륨에서 점(x, y)이 놓인 면의 바깥쪽 법선(단위 벡터). 면 밖이면 벽 방향 (0, 0, 1)
+export function volumeNormal(vol, x, y) {
+  const [ax, ay] = vol.apex
+  const A = { x: ax, y: ay, z: vol.height }
+  const B = vol.base
+  for (let i = 0; i < B.length; i++) {
+    const p = { x: B[i][0], y: B[i][1], z: 0 }
+    const q = { x: B[(i + 1) % B.length][0], y: B[(i + 1) % B.length][1], z: 0 }
+    // 꼭대기·두 바닥 꼭짓점 삼각형을 정면으로 본 안에 있나
+    const s1 = (p.x - x) * (q.y - y) - (p.y - y) * (q.x - x)
+    const s2 = (q.x - x) * (A.y - y) - (q.y - y) * (A.x - x)
+    const s3 = (A.x - x) * (p.y - y) - (A.y - y) * (p.x - x)
+    if (!((s1 >= 0 && s2 >= 0 && s3 >= 0) || (s1 <= 0 && s2 <= 0 && s3 <= 0))) continue
+    const u = { x: p.x - A.x, y: p.y - A.y, z: p.z - A.z }
+    const v = { x: q.x - A.x, y: q.y - A.y, z: q.z - A.z }
+    let n = { x: u.y * v.z - u.z * v.y, y: u.z * v.x - u.x * v.z, z: u.x * v.y - u.y * v.x }
+    if (n.z < 0) n = { x: -n.x, y: -n.y, z: -n.z }
+    const l = Math.hypot(n.x, n.y, n.z) || 1
+    return { x: n.x / l, y: n.y / l, z: n.z / l }
+  }
+  return { x: 0, y: 0, z: 1 }
+}

@@ -6,7 +6,7 @@ import { buildSequence } from './utils/stickman.js'
 import { blendPose, moversOf } from './utils/animate.js'
 import { TERM_NAMES, scoreFrames } from './utils/reward.js'
 import { pose3d, project } from './utils/depth.js'
-import { holdOutline, holdProfile, insidePoly, volumeBase, volumeHeight, volumeSurfaceZ } from './utils/hold3d.js'
+import { holdOutline, holdProfile, insidePoly, volumeBase, volumeHeight, volumeNormal, volumeSurfaceZ } from './utils/hold3d.js'
 import { estimateScaleFromImage, isReliable } from './utils/scale.js'
 import { handPose } from './utils/hand.js'
 
@@ -200,9 +200,9 @@ function usePoseTween(target, ms = 700) {
 }
 
 // 저장소의 현재 자세(2D)와 그 3D 좌표를 받아 children(p, p3)를 그림
-function LivePose({ store, feetInfo, heightM, grips, anchors, children }) {
+function LivePose({ store, feetInfo, heightM, grips, anchors, surfaces, children }) {
   const p = useSyncExternalStore(store.subscribe, store.get)
-  const p3 = useMemo(() => (p ? pose3d(p, heightM, feetInfo, grips, anchors) : null), [p, heightM, feetInfo, grips, anchors])
+  const p3 = useMemo(() => (p ? pose3d(p, heightM, feetInfo, grips, anchors, surfaces) : null), [p, heightM, feetInfo, grips, anchors, surfaces])
   return p && p3 ? children(p, p3) : null
 }
 
@@ -593,7 +593,12 @@ export default function App() {
     }
     for (const hd of out) {
       if (hd.volume) continue
-      for (const v of out) if (v.volume && insidePoly(hd.mx, hd.my, v.base)) hd.base = Math.max(hd.base, volumeSurfaceZ(v, hd.mx, hd.my))
+      for (const v of out)
+        if (v.volume && insidePoly(hd.mx, hd.my, v.base)) {
+          const z = volumeSurfaceZ(v, hd.mx, hd.my)
+          // 볼륨 위 홀드: 표면 높이만큼 띄우고, 그 면의 기울기(법선)에 맞춰 기울임
+          if (z >= hd.base) (hd.base = z), (hd.normal = volumeNormal(v, hd.mx, hd.my))
+        }
     }
     return out
   }, [photo, typedHolds, allHolds, wallWidth])
@@ -775,7 +780,7 @@ export default function App() {
             ) : view3d && fig ? (
               <div className="wall wall3d" style={{ width: fit.w, height: fit.h }}>
                 <Suspense fallback={<div className="banner">3D 불러오는 중…</div>}>
-                  <LivePose store={poseStore} feetInfo={fig.feetInfo} heightM={height / 100} grips={handGrips} anchors={poseAnchors}>
+                  <LivePose store={poseStore} feetInfo={fig.feetInfo} heightM={height / 100} grips={handGrips} anchors={poseAnchors} surfaces={holds3d}>
                     {(_, p3) => <View3D photoUrl={photo.url} wallW={wallWidth} wallH={wallWidth / photo.aspect} holds={holds3d} p3={p3} handTypes={handTypes} smear={smearSides} heightM={height / 100} hard={step?.hard} />}
                   </LivePose>
                 </Suspense>
@@ -806,7 +811,7 @@ export default function App() {
                       )
                     })}
                   {fig && (
-                    <LivePose store={poseStore} feetInfo={fig.feetInfo} heightM={height / 100} grips={handGrips} anchors={poseAnchors}>
+                    <LivePose store={poseStore} feetInfo={fig.feetInfo} heightM={height / 100} grips={handGrips} anchors={poseAnchors} surfaces={holds3d}>
                       {(p2, p3) => (
                         <>
                   {fig.feetInfo.map((f) =>
@@ -926,7 +931,7 @@ export default function App() {
                     <button className="nav" disabled={fi >= frames.length - 1} onClick={() => { setPlaying(false); setFrameIdx(fi + 1) }}>▶</button>
                   </div>
                   {fig && (
-                    <LivePose store={poseStore} feetInfo={fig.feetInfo} heightM={height / 100} grips={handGrips} anchors={poseAnchors}>
+                    <LivePose store={poseStore} feetInfo={fig.feetInfo} heightM={height / 100} grips={handGrips} anchors={poseAnchors} surfaces={holds3d}>
                       {(_, p3) => <SideView p3={p3} feetInfo={fig.feetInfo} heightM={height / 100} />}
                     </LivePose>
                   )}

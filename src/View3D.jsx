@@ -111,11 +111,12 @@ export default function View3D({ photoUrl, wallW, wallH, holds, p3, handTypes, s
         continue
       }
       // 사진에서 뽑은 윤곽(없으면 타원)을 둥글게 깎아 세움. 둥근 정도·두께는 종류별(hold3d.holdProfile)
+      // 윤곽은 홀드 중심 기준으로 만들고(볼륨 면에 맞춰 기울이기 위해), 사진 좌표(UV)만 원래 위치로 되돌림
       const shape = new THREE.Shape()
       if (h.outline?.length >= 6) {
-        h.outline.forEach(([x, y], i) => (i ? shape.lineTo(x, y) : shape.moveTo(x, y)))
+        h.outline.forEach(([x, y], i) => (i ? shape.lineTo(x - h.mx, y - h.my) : shape.moveTo(x - h.mx, y - h.my)))
         shape.closePath()
-      } else shape.absellipse(h.mx, h.my, h.rx, h.ry, 0, Math.PI * 2, false, 0)
+      } else shape.absellipse(0, 0, h.rx, h.ry, 0, Math.PI * 2, false, 0)
       const r = Math.min(h.rx, h.ry)
       const bevel = Math.min(r * h.round, h.depth * 0.9)
       const geo = new THREE.ExtrudeGeometry(shape, {
@@ -127,17 +128,21 @@ export default function View3D({ photoUrl, wallW, wallH, holds, p3, handTypes, s
         bevelSegments: 5,
         curveSegments: 6,
       })
+      geo.translate(0, 0, h.depth * 0.425) // 뒤쪽 깎인 면이 바닥면(z=0)에 붙게
+      const uvs = geo.attributes.uv
+      for (let k = 0; k < uvs.count; k++) uvs.setXY(k, uvs.getX(k) + h.mx, uvs.getY(k) + h.my)
       // 앞면: 사진 속 그 홀드 모습, 옆면: 홀드 색
       const front = new THREE.MeshStandardMaterial({ map: st.holdTex, roughness: 0.7 })
       const side = new THREE.MeshStandardMaterial({ color: h.color, roughness: 0.8 })
       const m = new THREE.Mesh(geo, [front, side])
-      m.position.z = h.depth * 0.425 + (h.base ?? 0) // 뒤쪽 깎인 면이 벽(또는 볼륨 표면)에 붙게
+      m.position.set(h.mx, h.my, h.base ?? 0) // 벽(또는 볼륨 표면)에 붙임
+      if (h.normal) m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), new THREE.Vector3(h.normal.x, h.normal.y, h.normal.z)) // 볼륨 면 기울기에 맞춤
       g.add(m)
       // 포켓: 가운데 어두운 구멍
       if (h.type === 'pocket') {
         const hole = new THREE.Mesh(new THREE.CircleGeometry(r * 0.35, 16), new THREE.MeshBasicMaterial({ color: '#111' }))
-        hole.position.set(h.mx, h.my, h.depth + (h.base ?? 0) + 0.002)
-        g.add(hole)
+        hole.position.set(0, 0, h.depth + 0.002)
+        m.add(hole) // 홀드와 함께 기울어지게
       }
     }
     st.scene.add(g)

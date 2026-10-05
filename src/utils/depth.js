@@ -2,7 +2,7 @@
 // 손발 끝은 벽(홀드)에 있고, 골반·어깨는 벽 앞에 떠 있다(reward.js의 HIP_Z, SHOULDER_Z와 같은 값).
 // 팔꿈치·무릎은 실제 뼈 길이를 지키는 3D 2관절로 다시 계산: 그림의 굽힘 방향 + 벽 바깥쪽으로 꺾임.
 import { HIP_Z, SHOULDER_Z } from './reward.js'
-import { gripFrame } from './hold3d.js'
+import { gripFrame, insidePoly, volumeSurfaceZ } from './hold3d.js'
 
 const sub = (a, b) => ({ x: a.x - b.x, y: a.y - b.y, z: a.z - b.z })
 const addS = (a, b, s = 1) => ({ x: a.x + b.x * s, y: a.y + b.y * s, z: a.z + b.z * s })
@@ -31,9 +31,18 @@ function joint3(root, end, l1, l2, hint) {
 // grips: [{ type, hold: {mx, my, rx, ry, depth, base} }, ...] — 이전·다음 자세에서 손이 잡은 홀드들.
 // 손마다 지금 위치에서 가장 가까운 것의 잡는 자리에 놓음(동작 사이에 잡기 정보가 바뀌어도 손이 튀지 않게)
 // anchors: 이전·다음 자세의 2D 관절 좌표들. 손발이 그 자리 근처면 홀드를 잡은(디딘) 것, 멀면 공중에서 움직이는 중
-export function pose3d(p, heightM, feetInfo, grips = null, anchors = null) {
-  const zh = HIP_Z * heightM
-  const zs = SHOULDER_Z * heightM
+// surfaces: 3D 보기의 홀드·볼륨({mx, my, rx, ry, depth, base} / 볼륨은 {volume, apex, base(다각형), height}).
+// 발이 그 위에 있으면 표면 높이에 발을 놓음
+export function pose3d(p, heightM, feetInfo, grips = null, anchors = null, surfaces = null) {
+  const ref0 = anchors?.[0] ?? p
+  // 엉덩이 깊이: 무릎을 굽힐수록(발을 높이 올리거나 앉듯이 버틸수록) 엉덩이를 뒤로 뺌.
+  // 다리 편 정도 = 골반-발 거리 / 다리 길이(넓적다리+정강이). 다 펴면 키의 10%, 반쯤 접으면 24%
+  const legExt = ['L', 'R']
+    .map((s) => d2(p['hip' + s], p['foot' + s]) / Math.max(1e-6, d2(ref0['hip' + s], ref0['knee' + s]) + d2(ref0['knee' + s], ref0['foot' + s])))
+    .reduce((a, b) => a + b, 0) / 2
+  const zh = heightM * (0.1 + 0.14 * Math.min(1, Math.max(0, (1 - legExt) / 0.5)))
+  // 어깨: 기본 키의 15%, 엉덩이를 많이 뺄수록 상체도 조금 따라 뒤로(몸통이 벽과 거의 평행하게 기댄 자세가 되지 않게)
+  const zs = Math.max(SHOULDER_Z * heightM, zh * 0.8)
   const at = (q, z) => ({ x: q.x, y: q.y, z })
   const P = {
     head: at(p.head, zs + 0.03 * heightM),
@@ -82,8 +91,22 @@ export function pose3d(p, heightM, feetInfo, grips = null, anchors = null) {
     Object.defineProperty(P, side === 'L' ? 'gripL' : 'gripR', { value: { f: fv, n: nv, w }, enumerable: false })
   }
   const smear = (side) => feetInfo?.find((f) => f.side === side)?.id === null
-  P.footL = at(p.footL, smear('L') ? 0 : 0.03) // 벽 밀기는 발끝이 벽면에 바로
-  P.footR = at(p.footR, smear('R') ? 0 : 0.03)
+  // 발 높이(벽에서): 벽 밀기는 벽면(0). 홀드·볼륨 위면 그 표면(홀드 윗면 / 볼륨 면). 홀드 가장자리로 갈수록 부드럽게 낮아짐
+  const footZ = (q) => {
+    let z = 0.03
+    for (const h of surfaces ?? []) {
+      if (h.volume) {
+        if (insidePoly(q.x, q.y, h.base)) z = Math.max(z, volumeSurfaceZ(h, q.x, q.y) + 0.02)
+        continue
+      }
+      const r = Math.max(h.rx, h.ry)
+      const d = Math.hypot(q.x - h.mx, q.y - h.my)
+      if (d < r * 1.2) z = Math.max(z, ((h.base ?? 0) + h.depth * 0.7) * Math.min(1, (r * 1.2 - d) / (r * 0.6)))
+    }
+    return z
+  }
+  P.footL = at(p.footL, smear('L') ? 0 : footZ(p.footL)) // 벽 밀기는 발끝이 벽면에 바로
+  P.footR = at(p.footR, smear('R') ? 0 : footZ(p.footR))
   // 팔다리 길이 맞추기: 몸을 벽에서 띄운 만큼 정면 그림보다 실제 거리가 길어져, 거의 편 팔다리는 닿지 않음
   // - 홀드를 잡은(디딘) 손발: 손발은 그 자리에 두고 몸(골반·어깨)을 벽 쪽으로 붙임(팔다리를 펴면 몸이 벽에 붙는 것과 같음)
   // - 공중에서 움직이는 손발: 손발 끝을 팔다리를 다 편 거리까지만 보냄
