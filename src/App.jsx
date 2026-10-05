@@ -8,6 +8,7 @@ import { TERM_NAMES, scoreFrames } from './utils/reward.js'
 import { pose3d, project } from './utils/depth.js'
 import { holdOutline, holdProfile, insidePoly, volumeBase, volumeHeight, volumeNormal, volumeSurfaceZ } from './utils/hold3d.js'
 import { estimateScaleFromImage, isReliable } from './utils/scale.js'
+import { defaultFace, nextFace, rectifyFaces } from './utils/rectify.js'
 import { handPose } from './utils/hand.js'
 
 const View3D = lazy(() => import('./View3D.jsx'))
@@ -302,6 +303,43 @@ export default function App() {
     setHolds([])
     setFrameIdx(0)
     setMode('edit')
+  }
+
+  // 벽 펴기: 면마다 네 모서리를 맞추면 정면에서 본 평평한 벽 사진으로 바꿈(천장·바닥은 잘려 나감)
+  const [straight, setStraight] = useState(null) // { faces: [[{x,y}x4], ...], drag: {face, corner} | null } | null
+  const onStraightPointer = (e) => {
+    if (!straight) return
+    const r = boxRef.current.getBoundingClientRect()
+    const pt = { x: Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), y: Math.min(1, Math.max(0, (e.clientY - r.top) / r.height)) }
+    if (e.type === 'pointerdown') {
+      // 가장 가까운 모서리를 잡음(화면에서 약 25px 안)
+      let best = null
+      straight.faces.forEach((f, fi) =>
+        f.forEach((q, ci) => {
+          const d = Math.hypot((q.x - pt.x) * r.width, (q.y - pt.y) * r.height)
+          if (d < 28 && (!best || d < best.d)) best = { d, fi, ci }
+        }),
+      )
+      if (best) {
+        e.currentTarget.setPointerCapture?.(e.pointerId)
+        setStraight({ ...straight, drag: { from: straight.faces[best.fi][best.ci] } })
+      }
+    } else if (e.type === 'pointermove' && straight.drag) {
+      // 이웃 면과 같은 자리였던 모서리(공유 모서리)는 함께 움직임
+      const f0 = straight.drag.from
+      const faces = straight.faces.map((f) => f.map((q) => (Math.abs(q.x - f0.x) < 1e-6 && Math.abs(q.y - f0.y) < 1e-6 ? pt : q)))
+      setStraight({ faces, drag: { from: pt } })
+    } else if (e.type === 'pointerup') setStraight({ ...straight, drag: null })
+  }
+  const applyStraight = () => {
+    const faces = straight.faces
+    setStraight(null)
+    const im = new Image()
+    im.onload = () => {
+      const c = rectifyFaces(im, faces)
+      loadCanvasOrImage(c, c.width, c.height, c.toDataURL('image/jpeg', 0.92))
+    }
+    im.src = photo.url
   }
 
   const useDemo = () => {
@@ -767,6 +805,9 @@ export default function App() {
                 {cloud.status === 'loading' ? '☁️ AI 검출 중…' : holdsSrc === 'cloud' || (!target && cloud.status === 'ok') ? `☁️ AI 검출 ${cloud.holds.length}개 ${showBoxes ? '▣' : '□'}` : cloud.status === 'fail' ? `🎨 색 검출 (AI 실패: ${cloud.error})` : '🎨 색 검출'}
               </div>
             )}
+            {photo && !view3d && !straight && (
+              <button className="straight-btn" onClick={() => setStraight({ faces: [defaultFace()], drag: null })} title="비스듬하거나 꺾인 벽을 정면에서 본 평평한 사진으로 펴요">📐 벽 펴기</button>
+            )}
             {photo && fig && (
               <button className="view-toggle" onClick={() => setView3d(!view3d)}>{view3d ? '🖼 사진' : '🧊 3D'}</button>
             )}
@@ -787,9 +828,29 @@ export default function App() {
                 <div className="hint3d">드래그로 돌리기 · 휠로 확대 · 하늘색 발 = 홀드, 주황 발 = 벽 밀기</div>
               </div>
             ) : (
-              <div className={mode === 'volume' ? 'wall drawing' : 'wall'} ref={boxRef} onClick={onTap} onPointerDown={onVolPointer} onPointerMove={onVolPointer} onPointerUp={onVolPointer} style={{ width: fit.w, height: fit.h }}>
+              <div className={mode === 'volume' || straight ? 'wall drawing' : 'wall'} ref={boxRef} onClick={straight ? undefined : onTap} onPointerDown={straight ? onStraightPointer : onVolPointer} onPointerMove={straight ? onStraightPointer : onVolPointer} onPointerUp={straight ? onStraightPointer : onVolPointer} style={{ width: fit.w, height: fit.h }}>
                 <img src={photo.url} alt="벽" draggable="false" />
-                <svg viewBox={`0 0 ${photo.aspect} 1`} preserveAspectRatio="none">
+                {straight && (
+                  <svg className="straight" viewBox={`0 0 ${photo.aspect} 1`} preserveAspectRatio="none">
+                    {straight.faces.map((f, fi) => (
+                      <g key={fi}>
+                        <polygon points={f.map((q) => `${q.x * photo.aspect},${q.y}`).join(' ')} fill="rgba(77,208,255,0.15)" stroke="#4dd0ff" strokeWidth={3 * u} />
+                        <text x={((f[0].x + f[2].x) / 2) * photo.aspect} y={(f[0].y + f[2].y) / 2} textAnchor="middle" fontSize={18 * u} fontWeight="800" fill="#fff" stroke="#000" strokeWidth={3 * u} paintOrder="stroke">면 {fi + 1}</text>
+                        {f.map((q, ci) => <circle key={ci} cx={q.x * photo.aspect} cy={q.y} r={10 * u} fill="#ffd400" stroke="#000" strokeWidth={2 * u} />)}
+                      </g>
+                    ))}
+                  </svg>
+                )}
+                {straight && (
+                  <div className="straight-bar">
+                    <span>노란 점을 끌어 벽 면의 네 모서리에 맞추세요</span>
+                    <button onClick={() => setStraight({ faces: [...straight.faces, nextFace(straight.faces[straight.faces.length - 1])], drag: null })}>+ 면 추가</button>
+                    {straight.faces.length > 1 && <button onClick={() => setStraight({ faces: straight.faces.slice(0, -1), drag: null })}>− 마지막 면</button>}
+                    <button onClick={() => setStraight(null)}>취소</button>
+                    <button className="primary" onClick={applyStraight}>완료</button>
+                  </div>
+                )}
+                <svg style={straight ? { display: 'none' } : undefined} viewBox={`0 0 ${photo.aspect} 1`} preserveAspectRatio="none">
                   {drag && (
                     <rect x={Math.min(drag.x0, drag.x1) * photo.aspect} y={Math.min(drag.y0, drag.y1)} width={Math.abs(drag.x1 - drag.x0) * photo.aspect} height={Math.abs(drag.y1 - drag.y0)} fill="rgba(176,224,255,0.25)" stroke="#b0e0ff" strokeWidth={2.5 * u} />
                   )}
