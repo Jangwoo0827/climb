@@ -12,10 +12,7 @@ const BONES = [
 ]
 const UP = new THREE.Vector3(0, 1, 0)
 
-// wall3d: utils/wall3d.buildWall3D 결과(꺾인 벽 모델). 있으면 평면 벽 대신 그 면들을 그리고, 홀드·몸을 면 위 실제 자리로 옮김
-export default function View3D({ photoUrl, wallW, wallH, holds, p3, handTypes, smear, heightM, hard, wall3d }) {
-  // 평면 벽 좌표(x, y, 벽에서 z) → 3D 월드. 꺾인 벽이면 그 자리 면 위 + 면 법선 방향으로 z
-  const M = (q) => (wall3d ? wall3d.map(q.x, q.y, q.z ?? 0).p : q)
+export default function View3D({ photoUrl, wallW, wallH, holds, p3, handTypes, smear, heightM, hard }) {
   const hostRef = useRef(null)
   const ref = useRef(null) // { renderer, scene, camera, controls, body }
 
@@ -51,7 +48,7 @@ export default function View3D({ photoUrl, wallW, wallH, holds, p3, handTypes, s
     holdTex.colorSpace = THREE.SRGBColorSpace
     holdTex.wrapS = holdTex.wrapT = THREE.ClampToEdgeWrapping
     holdTex.repeat.set(1 / wallW, 1 / wallH)
-    ref.current = { renderer, scene, camera, controls, body, placed: false, holdTex, tex, flatWall: wall, floor }
+    ref.current = { renderer, scene, camera, controls, body, placed: false, holdTex }
 
     const resize = () => {
       const w = host.clientWidth || 1
@@ -81,52 +78,6 @@ export default function View3D({ photoUrl, wallW, wallH, holds, p3, handTypes, s
     }
   }, [photoUrl, wallW, wallH])
 
-  // 꺾인 벽: 면마다 격자 메시(꼭짓점의 사진 좌표 = UV라 사진이 면에 정확히 붙음). 없으면 평면 벽
-  useEffect(() => {
-    const st = ref.current
-    if (!st) return
-    if (st.wallGroup) {
-      st.scene.remove(st.wallGroup)
-      st.wallGroup.traverse((o) => o.geometry?.dispose())
-      st.wallGroup = null
-    }
-    st.flatWall.visible = !wall3d
-    if (!wall3d) {
-      st.floor.position.y = 0
-      return
-    }
-    const g = new THREE.Group()
-    const mat = new THREE.MeshBasicMaterial({ map: st.tex, side: THREE.DoubleSide })
-    for (const m of wall3d.meshes) {
-      const n = m.seg + 1
-      const pos = new Float32Array(n * n * 3)
-      const uv = new Float32Array(n * n * 2)
-      m.verts.forEach((v, i) => pos.set([v.x, v.y, v.z], i * 3))
-      m.uvs.forEach((t, i) => uv.set([t.u, t.v], i * 2))
-      const idx = []
-      for (let j = 0; j < m.seg; j++)
-        for (let i = 0; i < m.seg; i++) {
-          const a = j * n + i
-          idx.push(a, a + n, a + 1, a + 1, a + n, a + n + 1)
-        }
-      const geo = new THREE.BufferGeometry()
-      geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
-      geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2))
-      geo.setIndex(idx)
-      geo.computeVertexNormals()
-      g.add(new THREE.Mesh(geo, mat))
-    }
-    st.scene.add(g)
-    st.wallGroup = g
-    st.floor.position.y = wall3d.floorY
-    // 몸이 없을 때(루트를 아직 안 고름): 벽 가운데를 대각선 앞에서 봄
-    if (!st.placed) {
-      const c = wall3d.map(wallW / 2, wallH / 2, 0).p
-      st.controls.target.set(c.x, c.y, c.z)
-      st.camera.position.set(c.x - wallW * 0.6, c.y + wallH * 0.2, c.z + Math.max(wallW, wallH) * 0.9)
-    }
-  }, [wall3d, photoUrl, wallW, wallH])
-
   // 홀드: 벽에서 튀어나온 반쪽 타원체(사진 속 색·크기). 볼륨은 벽에서 솟은 사각뿔
   useEffect(() => {
     const st = ref.current
@@ -148,10 +99,7 @@ export default function View3D({ photoUrl, wallW, wallH, holds, p3, handTypes, s
         for (let i = 0; i < B.length; i++) {
           const a = B[i]
           const c = B[(i + 1) % B.length]
-          const T = M({ x: h.apex[0], y: h.apex[1], z: h.height })
-          const P1 = M({ x: a[0], y: a[1], z: 0 })
-          const P2 = M({ x: c[0], y: c[1], z: 0 })
-          pos.push(T.x, T.y, T.z, P1.x, P1.y, P1.z, P2.x, P2.y, P2.z)
+          pos.push(h.apex[0], h.apex[1], h.height, a[0], a[1], 0, c[0], c[1], 0)
           uv.push(h.apex[0], h.apex[1], a[0], a[1], c[0], c[1])
         }
         const geo = new THREE.BufferGeometry()
@@ -187,15 +135,8 @@ export default function View3D({ photoUrl, wallW, wallH, holds, p3, handTypes, s
       const front = new THREE.MeshStandardMaterial({ map: st.holdTex, roughness: 0.7 })
       const side = new THREE.MeshStandardMaterial({ color: h.color, roughness: 0.8 })
       const m = new THREE.Mesh(geo, [front, side])
-      const at = M({ x: h.mx, y: h.my, z: h.base ?? 0 })
-      m.position.set(at.x, at.y, at.z) // 벽(또는 볼륨 표면)에 붙임
-      // 방향: 꺾인 벽이면 그 면의 법선, 볼륨 위면 볼륨 면 기울기를 더함
-      const Z = new THREE.Vector3(0, 0, 1)
-      if (wall3d) {
-        const fn = wall3d.map(h.mx, h.my, 0).n
-        m.quaternion.setFromUnitVectors(Z, new THREE.Vector3(fn.x, fn.y, fn.z))
-      }
-      if (h.normal) m.quaternion.multiply(new THREE.Quaternion().setFromUnitVectors(Z, new THREE.Vector3(h.normal.x, h.normal.y, h.normal.z)))
+      m.position.set(h.mx, h.my, h.base ?? 0) // 벽(또는 볼륨 표면)에 붙임
+      if (h.normal) m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), new THREE.Vector3(h.normal.x, h.normal.y, h.normal.z)) // 볼륨 면 기울기에 맞춤
       g.add(m)
       // 포켓: 가운데 어두운 구멍
       if (h.type === 'pocket') {
@@ -206,7 +147,7 @@ export default function View3D({ photoUrl, wallW, wallH, holds, p3, handTypes, s
     }
     st.scene.add(g)
     st.holdGroup = g
-  }, [holds, photoUrl, wallW, wallH, wall3d])
+  }, [holds, photoUrl, wallW, wallH])
 
   // 자세가 바뀔 때마다: 메시는 처음 한 번만 만들고(애니메이션 중 매 프레임 새로 만들면 렉) 위치·방향·길이만 갱신
   useEffect(() => {
@@ -237,9 +178,7 @@ export default function View3D({ photoUrl, wallW, wallH, holds, p3, handTypes, s
     P.skin.color.set(hard ? '#ff8a6b' : '#f4f4f4')
     const A = new THREE.Vector3()
     const B = new THREE.Vector3()
-    const setBone = (m, a0, b0, r) => {
-      const a = M(a0)
-      const b = M(b0)
+    const setBone = (m, a, b, r) => {
       A.set(a.x, a.y, a.z)
       B.set(b.x, b.y, b.z)
       const len = Math.max(1e-4, A.distanceTo(B))
@@ -247,8 +186,7 @@ export default function View3D({ photoUrl, wallW, wallH, holds, p3, handTypes, s
       m.quaternion.setFromUnitVectors(UP, B.sub(A).normalize())
       m.scale.set(r, len, r)
     }
-    const setBall = (m, p0, r) => {
-      const p = M(p0)
+    const setBall = (m, p, r) => {
       m.position.set(p.x, p.y, p.z)
       m.scale.setScalar(r)
     }
@@ -269,14 +207,12 @@ export default function View3D({ photoUrl, wallW, wallH, holds, p3, handTypes, s
     // 발: 홀드를 딛은 발은 하늘색, 벽을 미는 발은 주황 원판
     ;[['L', 'footL'], ['R', 'footR']].forEach(([side, fk], i) => {
       const m = P.feet[i]
-      const fp = M(p3[fk])
-      m.position.set(fp.x, fp.y, fp.z)
+      m.position.set(p3[fk].x, p3[fk].y, p3[fk].z)
       m.scale.set(0.035 * heightM, 0.021 * heightM, 0.056 * heightM)
       m.material.color.set(smear?.[side] ? '#ff9a3c' : '#4dd0ff')
     })
     // 처음 한 번: 몸을 대각선 앞(왼쪽 아래)에서 보도록 카메라 배치. 이후로는 바라보는 점만 몸을 따라감
-    const hp = M({ x: p3.hip.x, y: p3.hip.y + 0.2, z: 0.15 })
-    const hip = new THREE.Vector3(hp.x, hp.y, hp.z)
+    const hip = new THREE.Vector3(p3.hip.x, p3.hip.y + 0.2, 0.15)
     if (!st.placed) {
       camera.position.copy(hip).add(new THREE.Vector3(-2.4, 0.9, 2.9)) // 왼쪽 앞 위에서 약 40° 비스듬히
       controls.target.copy(hip)
@@ -286,7 +222,7 @@ export default function View3D({ photoUrl, wallW, wallH, holds, p3, handTypes, s
       controls.target.add(d)
       camera.position.add(d)
     }
-  }, [p3, handTypes, smear, heightM, hard, wall3d])
+  }, [p3, handTypes, smear, heightM, hard])
 
   return <div ref={hostRef} className="view3d" />
 }
