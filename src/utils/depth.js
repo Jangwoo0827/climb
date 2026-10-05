@@ -2,6 +2,7 @@
 // 손발 끝은 벽(홀드)에 있고, 골반·어깨는 벽 앞에 떠 있다(reward.js의 HIP_Z, SHOULDER_Z와 같은 값).
 // 팔꿈치·무릎은 실제 뼈 길이를 지키는 3D 2관절로 다시 계산: 그림의 굽힘 방향 + 벽 바깥쪽으로 꺾임.
 import { HIP_Z, SHOULDER_Z } from './reward.js'
+import { gripFrame } from './hold3d.js'
 
 const sub = (a, b) => ({ x: a.x - b.x, y: a.y - b.y, z: a.z - b.z })
 const addS = (a, b, s = 1) => ({ x: a.x + b.x * s, y: a.y + b.y * s, z: a.z + b.z * s })
@@ -27,7 +28,8 @@ function joint3(root, end, l1, l2, hint) {
 }
 
 // p: stickman.js / animate.js의 2D 관절 좌표(미터), feetInfo: 발이 홀드인지 벽 밀기인지
-export function pose3d(p, heightM, feetInfo) {
+// grips: { L: { type, hold: {mx, my, rx, ry, depth} }, R: ... } — 잡은 홀드의 종류·크기. 주면 손을 홀드 표면의 잡는 자리에 놓음
+export function pose3d(p, heightM, feetInfo, grips = null) {
   const zh = HIP_Z * heightM
   const zs = SHOULDER_Z * heightM
   const at = (q, z) => ({ x: q.x, y: q.y, z })
@@ -41,6 +43,15 @@ export function pose3d(p, heightM, feetInfo) {
     hipR: at(p.hipR, zh),
     hl: at(p.hl, 0.05), // 홀드를 쥔 손(홀드 두께만큼 앞)
     hr: at(p.hr, 0.05),
+  }
+  // 잡는 자리: 홀드 종류별로 손가락이 닿는 지점에서 손목 위치를 정하고, 손 방향(f, n)도 함께 넘김
+  for (const [side, key] of [['L', 'hl'], ['R', 'hr']]) {
+    const g = grips?.[side]
+    if (!g?.hold) continue
+    const fr = gripFrame(g.type, g.hold, p.hip.x, heightM)
+    P[key] = fr.wrist
+    // 관절 좌표 목록(Object.entries 등)에는 안 잡히게: 손 방향은 좌표가 아님
+    Object.defineProperty(P, side === 'L' ? 'gripL' : 'gripR', { value: { f: fr.f, n: fr.n }, enumerable: false })
   }
   const smear = (side) => feetInfo?.find((f) => f.side === side)?.id === null
   P.footL = at(p.footL, smear('L') ? 0 : 0.03) // 벽 밀기는 발끝이 벽면에 바로

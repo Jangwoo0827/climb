@@ -27,16 +27,24 @@ const D = Math.PI / 180
 
 // wrist: 손목(홀드 위치, 3D), elbow: 팔꿈치(3D), side: 'L' | 'R', heightM: 키(손 크기 비례)
 // 반환: { palm: [점 4개], fingers: [[점...] x4], thumb: [점...] }
-export function handPose(type, wrist, elbow, side, heightM = 1.7) {
+// frame: hold3d.gripFrame 이 준 { f, n }(홀드 종류·모양에 맞춘 손가락 방향과 손등 방향). 없으면 아래팔 방향으로 어림
+export function handPose(type, wrist, elbow, side, heightM = 1.7, frame = null) {
   const g = GRIPS[type] ?? GRIPS.jug
   const k = heightM / 1.7
-  let f = norm(v(wrist.x - elbow.x, wrist.y - elbow.y, wrist.z - elbow.z))
-  let n = v(0, 0, 1)
-  n = norm(add(n, f, -dot(n, f))) // 아래팔에 수직이 되게
-  if (!isFinite(n.x)) n = v(0, 0, 1)
-  // 손 돌리기: 왼손·오른손이 서로 반대 방향으로 돌아 엄지가 몸 쪽/위쪽으로 감
   const sgn = side === 'L' ? 1 : -1
-  n = rot(n, f, g.roll * D * sgn)
+  let f
+  let n
+  if (frame) {
+    f = norm(frame.f)
+    n = norm(add(frame.n, f, -dot(frame.n, f))) // f에 수직이 되게
+  } else {
+    f = norm(v(wrist.x - elbow.x, wrist.y - elbow.y, wrist.z - elbow.z))
+    n = v(0, 0, 1)
+    n = norm(add(n, f, -dot(n, f))) // 아래팔에 수직이 되게
+    if (!isFinite(n.x)) n = v(0, 0, 1)
+    // 손 돌리기: 왼손·오른손이 서로 반대 방향으로 돌아 엄지가 몸 쪽/위쪽으로 감
+    n = rot(n, f, g.roll * D * sgn)
+  }
   const s = scale(cross(f, n), sgn) // 엄지 쪽
   // 손바닥: 손목에서 f로 9cm, 폭 8cm. 홀드를 쥐는 곳이 손가락 뿌리 근처가 되도록 손목을 살짝 뒤로
   const base = add(wrist, f, -0.05 * k)

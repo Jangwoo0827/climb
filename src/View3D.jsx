@@ -43,7 +43,12 @@ export default function View3D({ photoUrl, wallW, wallH, holds, p3, handTypes, s
     scene.add(floor)
     const body = new THREE.Group()
     scene.add(body)
-    ref.current = { renderer, scene, camera, controls, body, placed: false }
+    // 홀드 앞면에 입힐 사진: 홀드 모양의 좌표(벽 미터)를 그대로 사진 좌표로 쓰도록 1/벽크기로 축소
+    const holdTex = new THREE.TextureLoader().load(photoUrl)
+    holdTex.colorSpace = THREE.SRGBColorSpace
+    holdTex.wrapS = holdTex.wrapT = THREE.ClampToEdgeWrapping
+    holdTex.repeat.set(1 / wallW, 1 / wallH)
+    ref.current = { renderer, scene, camera, controls, body, placed: false, holdTex }
 
     const resize = () => {
       const w = host.clientWidth || 1
@@ -68,6 +73,7 @@ export default function View3D({ photoUrl, wallW, wallH, holds, p3, handTypes, s
       controls.dispose()
       renderer.dispose()
       tex.dispose()
+      holdTex.dispose()
       host.removeChild(renderer.domElement)
     }
   }, [photoUrl, wallW, wallH])
@@ -80,15 +86,14 @@ export default function View3D({ photoUrl, wallW, wallH, holds, p3, handTypes, s
       st.scene.remove(st.holdGroup)
       st.holdGroup.traverse((o) => {
         o.geometry?.dispose()
-        o.material?.dispose()
+        ;[].concat(o.material ?? []).forEach((mt) => mt.dispose())
       })
     }
     const g = new THREE.Group()
-    const sph = new THREE.SphereGeometry(1, 20, 14, 0, Math.PI * 2, 0, Math.PI / 2) // 반구(+y쪽) → x축으로 돌려 +z(벽 밖)로
     const pyr = new THREE.ConeGeometry(1, 1, 4, 1)
     for (const h of holds) {
-      const mat = new THREE.MeshStandardMaterial({ color: h.color, roughness: 0.75 })
       if (h.volume) {
+        const mat = new THREE.MeshStandardMaterial({ color: h.color, roughness: 0.8, flatShading: true })
         const depth = Math.min(0.6, Math.max(h.rx, h.ry) * 0.7)
         const m = new THREE.Mesh(pyr, mat)
         m.rotation.x = Math.PI / 2 // 뿔 끝이 벽 밖(+z)
@@ -96,13 +101,36 @@ export default function View3D({ photoUrl, wallW, wallH, holds, p3, handTypes, s
         m.scale.set(h.rx * 1.41, depth, h.ry * 1.41)
         m.position.set(h.mx, h.my, depth / 2)
         g.add(m)
-      } else {
-        const depth = Math.min(0.12, Math.max(0.02, Math.min(h.rx, h.ry) * 0.8))
-        const m = new THREE.Mesh(sph, mat)
-        m.rotation.x = Math.PI / 2
-        m.scale.set(h.rx, depth, h.ry)
-        m.position.set(h.mx, h.my, 0)
-        g.add(m)
+        continue
+      }
+      // 사진에서 뽑은 윤곽(없으면 타원)을 둥글게 깎아 세움. 둥근 정도·두께는 종류별(hold3d.holdProfile)
+      const shape = new THREE.Shape()
+      if (h.outline?.length >= 6) {
+        h.outline.forEach(([x, y], i) => (i ? shape.lineTo(x, y) : shape.moveTo(x, y)))
+        shape.closePath()
+      } else shape.absellipse(h.mx, h.my, h.rx, h.ry, 0, Math.PI * 2, false, 0)
+      const r = Math.min(h.rx, h.ry)
+      const bevel = Math.min(r * h.round, h.depth * 0.9)
+      const geo = new THREE.ExtrudeGeometry(shape, {
+        depth: h.depth * 0.15,
+        bevelEnabled: true,
+        bevelThickness: h.depth * 0.425,
+        bevelSize: bevel,
+        bevelOffset: -bevel, // 윤곽 바깥으로 부풀지 않게
+        bevelSegments: 5,
+        curveSegments: 6,
+      })
+      // 앞면: 사진 속 그 홀드 모습, 옆면: 홀드 색
+      const front = new THREE.MeshStandardMaterial({ map: st.holdTex, roughness: 0.7 })
+      const side = new THREE.MeshStandardMaterial({ color: h.color, roughness: 0.8 })
+      const m = new THREE.Mesh(geo, [front, side])
+      m.position.z = h.depth * 0.425 // 뒤쪽 깎인 면이 벽(z=0)에 붙게
+      g.add(m)
+      // 포켓: 가운데 어두운 구멍
+      if (h.type === 'pocket') {
+        const hole = new THREE.Mesh(new THREE.CircleGeometry(r * 0.35, 16), new THREE.MeshBasicMaterial({ color: '#111' }))
+        hole.position.set(h.mx, h.my, h.depth + 0.002)
+        g.add(hole)
       }
     }
     st.scene.add(g)
@@ -158,7 +186,7 @@ export default function View3D({ photoUrl, wallW, wallH, holds, p3, handTypes, s
     setBall(P.head, p3.head, 0.06 * heightM)
     // 손: 홀드 종류별 잡는 모양(손바닥 1 + 손가락 4×3 + 엄지 2 마디)
     ;[['L', 'hl', 'elL'], ['R', 'hr', 'elR']].forEach(([side, hk, ek], i) => {
-      const h = handPose(handTypes?.[side], p3[hk], p3[ek], side, heightM)
+      const h = handPose(handTypes?.[side], p3[hk], p3[ek], side, heightM, p3[side === 'L' ? 'gripL' : 'gripR'])
       const pal = h.palm
       setBone(P.hands[i].palm, mid(pal[0], pal[1]), mid(pal[2], pal[3]), 0.03 * heightM)
       let n = 0

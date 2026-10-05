@@ -6,6 +6,7 @@ import { buildSequence } from './utils/stickman.js'
 import { blendPose, moversOf } from './utils/animate.js'
 import { TERM_NAMES, scoreFrames } from './utils/reward.js'
 import { pose3d, project } from './utils/depth.js'
+import { holdOutline, holdProfile } from './utils/hold3d.js'
 import { estimateScaleFromImage, isReliable } from './utils/scale.js'
 import { handPose } from './utils/hand.js'
 
@@ -67,7 +68,7 @@ function Stickman({ p3, sv, headR, hard, label, u, heightM, handTypes }) {
       ))}
       {/* 손: 홀드 종류별 잡는 모양(손바닥, 손가락, 엄지) */}
       {[['L', 'hl', 'elL'], ['R', 'hr', 'elR']].map(([side, hk, ek]) => {
-        const hd = handPose(handTypes?.[side], p3[hk], p3[ek], side, heightM)
+        const hd = handPose(handTypes?.[side], p3[hk], p3[ek], side, heightM, p3[side === 'L' ? 'gripL' : 'gripR'])
         const pts = (arr) => arr.map((q) => sv(project(q))).join(' ')
         return (
           <g key={side}>
@@ -189,9 +190,9 @@ function usePoseTween(target, ms = 700) {
 }
 
 // 저장소의 현재 자세(2D)와 그 3D 좌표를 받아 children(p, p3)를 그림
-function LivePose({ store, feetInfo, heightM, children }) {
+function LivePose({ store, feetInfo, heightM, grips, children }) {
   const p = useSyncExternalStore(store.subscribe, store.get)
-  const p3 = useMemo(() => (p ? pose3d(p, heightM, feetInfo) : null), [p, heightM, feetInfo])
+  const p3 = useMemo(() => (p ? pose3d(p, heightM, feetInfo, grips) : null), [p, heightM, feetInfo, grips])
   return p && p3 ? children(p, p3) : null
 }
 
@@ -549,7 +550,22 @@ export default function App() {
       const b = hd.box
       const rw = b ? ((b.x1 - b.x0) / 2) * wallWidth : Math.sqrt((hd.size * wallWidth * wallH) / Math.PI)
       const rh = b ? ((b.y1 - b.y0) / 2) * wallH : rw
-      out.push({ x: hd.x, y: hd.y, mx: hd.x * wallWidth, my: (1 - hd.y) * wallH, rx: rw, ry: rh, color: colorAt(hd.x, hd.y), volume: hd.type === 'volume' })
+      const type = hd.type ?? 'jug'
+      // 사진에서 뽑은 실제 윤곽(미터). 못 뽑으면 3D에서 타원으로 그림
+      const ol = b ? holdOutline(photo.img, b) : null
+      out.push({
+        x: hd.x,
+        y: hd.y,
+        mx: hd.x * wallWidth,
+        my: (1 - hd.y) * wallH,
+        rx: rw,
+        ry: rh,
+        type,
+        ...holdProfile(type, rw, rh),
+        outline: ol?.map(([ox, oy]) => [ox * wallWidth, (1 - oy) * wallH]),
+        color: colorAt(hd.x, hd.y),
+        volume: hd.type === 'volume',
+      })
     }
     return out
   }, [photo, typedHolds, allHolds, wallWidth])
@@ -565,6 +581,26 @@ export default function App() {
   const stepMl = step ? typedHolds[plan.m[step.to]?.parent]?.ml : null
   const dynoCount = plan?.route?.steps.filter((s) => s.dyno).length ?? 0
   const fig = frame.fig ?? null
+  // 두 손이 잡은 홀드의 종류와 입체 크기(손을 홀드 표면의 잡는 자리에 놓는 데 씀)
+  const handGrips = useMemo(() => {
+    if (!fig || !plan?.m) return null
+    const at = (pt) => {
+      let best = null
+      for (const id of fig.hands) {
+        const h = plan.m[id]
+        const d = Math.hypot(h.mx - pt.x, h.my - pt.y)
+        if (!best || d < best.d) best = { d, h }
+      }
+      if (!best) return null
+      const h3 = holds3d.reduce((a, o) => (!a || Math.hypot(o.mx - best.h.mx, o.my - best.h.my) < Math.hypot(a.mx - best.h.mx, a.my - best.h.my) ? o : a), null)
+      const near = h3 && Math.hypot(h3.mx - best.h.mx, h3.my - best.h.my) < 0.1
+      const type = best.h.type ?? 'jug'
+      const rx = near ? h3.rx : 0.05
+      const ry = near ? h3.ry : 0.05
+      return { type, hold: { mx: best.h.mx, my: best.h.my, rx, ry, depth: holdProfile(type, rx, ry).depth } }
+    }
+    return { L: at(fig.p.hl), R: at(fig.p.hr) }
+  }, [fig, plan, holds3d])
   const isFoot = frame.k === 'foot'
   // 발 홀드 순서: 전체 경로를 따라가며 발이 처음 딛는 홀드에 발1, 발2 … 번호를 붙임
   const footOrder = useMemo(() => {
@@ -705,7 +741,7 @@ export default function App() {
             ) : view3d && fig ? (
               <div className="wall wall3d" style={{ width: fit.w, height: fit.h }}>
                 <Suspense fallback={<div className="banner">3D 불러오는 중…</div>}>
-                  <LivePose store={poseStore} feetInfo={fig.feetInfo} heightM={height / 100}>
+                  <LivePose store={poseStore} feetInfo={fig.feetInfo} heightM={height / 100} grips={handGrips}>
                     {(_, p3) => <View3D photoUrl={photo.url} wallW={wallWidth} wallH={wallWidth / photo.aspect} holds={holds3d} p3={p3} handTypes={handTypes} smear={smearSides} heightM={height / 100} hard={step?.hard} />}
                   </LivePose>
                 </Suspense>
@@ -736,7 +772,7 @@ export default function App() {
                       )
                     })}
                   {fig && (
-                    <LivePose store={poseStore} feetInfo={fig.feetInfo} heightM={height / 100}>
+                    <LivePose store={poseStore} feetInfo={fig.feetInfo} heightM={height / 100} grips={handGrips}>
                       {(p2, p3) => (
                         <>
                   {fig.feetInfo.map((f) =>
@@ -856,7 +892,7 @@ export default function App() {
                     <button className="nav" disabled={fi >= frames.length - 1} onClick={() => { setPlaying(false); setFrameIdx(fi + 1) }}>▶</button>
                   </div>
                   {fig && (
-                    <LivePose store={poseStore} feetInfo={fig.feetInfo} heightM={height / 100}>
+                    <LivePose store={poseStore} feetInfo={fig.feetInfo} heightM={height / 100} grips={handGrips}>
                       {(_, p3) => <SideView p3={p3} feetInfo={fig.feetInfo} heightM={height / 100} />}
                     </LivePose>
                   )}
