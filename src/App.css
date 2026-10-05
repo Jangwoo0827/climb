@@ -172,10 +172,3 @@ main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .detect-src.click { pointer-events: auto; cursor: pointer; }
 .wall.drawing { touch-action: none; cursor: crosshair; }
 .scale-src { position: absolute; top: 40px; right: 8px; z-index: 5; padding: 4px 10px; border-radius: 999px; background: rgba(20, 23, 31, 0.85); color: #cfd6e4; font-size: 12px; pointer-events: none; }
-
-.straight-btn { position: absolute; top: 44px; left: 8px; z-index: 5; padding: 6px 10px; border-radius: 999px; border: 0; background: rgba(20, 23, 31, 0.85); color: #fff; font-weight: 700; cursor: pointer; }
-.wall svg.straight { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 3; }
-.straight-bar { position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 6; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px; border-radius: 10px; background: rgba(20, 23, 31, 0.9); color: #cfd6e4; font-size: 12px; }
-.straight-bar span { flex: 1 1 100%; }
-.straight-bar button { padding: 6px 10px; border-radius: 8px; border: 0; background: #2a3040; color: #fff; font-weight: 700; cursor: pointer; }
-.straight-bar button.primary { background: #ffd400; color: #111; }
