@@ -6,7 +6,7 @@ import { buildSequence } from './utils/stickman.js'
 import { blendPose, moversOf } from './utils/animate.js'
 import { TERM_NAMES, scoreFrames } from './utils/reward.js'
 import { pose3d, project } from './utils/depth.js'
-import { holdOutline, holdProfile } from './utils/hold3d.js'
+import { holdOutline, holdProfile, insidePoly, volumeBase, volumeHeight, volumeSurfaceZ } from './utils/hold3d.js'
 import { estimateScaleFromImage, isReliable } from './utils/scale.js'
 import { handPose } from './utils/hand.js'
 
@@ -546,7 +546,9 @@ export default function App() {
     }
     const out = []
     for (const hd of [...typedHolds, ...allHolds]) {
-      if (out.some((o) => Math.hypot((o.x - hd.x) * photo.aspect, o.y - hd.y) < 0.02)) continue
+      // 같은 홀드를 두 번 그리지 않음: 이미 넣은 (볼륨이 아닌) 홀드의 상자 안에 중심이 있으면 건너뜀
+      const isVol = hd.type === 'volume'
+      if (out.some((o) => !o.volume && !isVol && (o.box ? hd.x >= o.box.x0 && hd.x <= o.box.x1 && hd.y >= o.box.y0 && hd.y <= o.box.y1 : Math.hypot((o.x - hd.x) * photo.aspect, o.y - hd.y) < 0.02))) continue
       const b = hd.box
       const rw = b ? ((b.x1 - b.x0) / 2) * wallWidth : Math.sqrt((hd.size * wallWidth * wallH) / Math.PI)
       const rh = b ? ((b.y1 - b.y0) / 2) * wallH : rw
@@ -564,8 +566,20 @@ export default function App() {
         ...holdProfile(type, rw, rh),
         outline: ol?.map(([ox, oy]) => [ox * wallWidth, (1 - oy) * wallH]),
         color: colorAt(hd.x, hd.y),
-        volume: hd.type === 'volume',
+        volume: isVol,
+        box: b,
+        base: 0,
       })
+    }
+    // 볼륨: 실제 윤곽(없으면 상자)을 바닥으로 한 다각뿔. 그 위에 붙은 홀드는 볼륨 표면 높이(base)만큼 띄움
+    for (const v of out) {
+      if (!v.volume) continue
+      const outline = v.outline ?? [[v.mx - v.rx, v.my - v.ry], [v.mx + v.rx, v.my - v.ry], [v.mx + v.rx, v.my + v.ry], [v.mx - v.rx, v.my + v.ry]]
+      Object.assign(v, volumeBase(outline), { height: volumeHeight(v.rx, v.ry) })
+    }
+    for (const hd of out) {
+      if (hd.volume) continue
+      for (const v of out) if (v.volume && insidePoly(hd.mx, hd.my, v.base)) hd.base = Math.max(hd.base, volumeSurfaceZ(v, hd.mx, hd.my))
     }
     return out
   }, [photo, typedHolds, allHolds, wallWidth])
@@ -597,7 +611,7 @@ export default function App() {
       const type = best.h.type ?? 'jug'
       const rx = near ? h3.rx : 0.05
       const ry = near ? h3.ry : 0.05
-      return { type, hold: { mx: best.h.mx, my: best.h.my, rx, ry, depth: holdProfile(type, rx, ry).depth } }
+      return { type, hold: { mx: best.h.mx, my: best.h.my, rx, ry, depth: holdProfile(type, rx, ry).depth, base: near ? h3.base : 0 } }
     }
     return { L: at(fig.p.hl), R: at(fig.p.hr) }
   }, [fig, plan, holds3d])

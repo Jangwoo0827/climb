@@ -86,7 +86,8 @@ const norm = (a) => {
 // 종류별로 손가락이 닿는 지점(anchor)과 손 방향. hold: { mx, my, rx, ry, depth } (미터, 벽 = z 0)
 // f = 손가락이 뻗는 방향, n = 손등이 향하는 방향. 손목은 anchor에서 손 길이만큼 f 반대쪽, 손바닥이 표면에 닿게 n쪽으로 띄움
 export function gripFrame(type, hold, bodyX, heightM = 1.7) {
-  const { mx, my, rx, ry, depth: d } = hold
+  const { mx, my, rx, ry, base = 0 } = hold
+  const d = hold.depth + base // 볼륨 위 홀드면 볼륨 표면 높이만큼 더 나와 있음
   const k = heightM / 1.7
   let anchor
   let f
@@ -141,4 +142,79 @@ export function gripFrame(type, hold, bodyX, heightM = 1.7) {
   const back = 0.1 * k
   const wrist = v(anchor.x - f.x * back + n.x * 0.015, anchor.y - f.y * back + n.y * 0.015, Math.max(0.02, anchor.z - f.z * back + n.z * 0.015))
   return { anchor, f, n, wrist }
+}
+
+// ---------- 볼륨(벽에서 솟은 다각뿔) ----------
+// 볼륨 윤곽(미터 좌표 [[x,y],...])을 볼록 껍질 → 적은 꼭짓점 다각형으로 다듬음(실제 볼륨은 면이 몇 개뿐)
+export function volumeBase(outline) {
+  const pts = [...outline].sort((a, b) => a[0] - b[0] || a[1] - b[1])
+  const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+  const lo = []
+  for (const q of pts) {
+    while (lo.length >= 2 && cross(lo[lo.length - 2], lo[lo.length - 1], q) <= 0) lo.pop()
+    lo.push(q)
+  }
+  const up = []
+  for (let i = pts.length - 1; i >= 0; i--) {
+    const q = pts[i]
+    while (up.length >= 2 && cross(up[up.length - 2], up[up.length - 1], q) <= 0) up.pop()
+    up.push(q)
+  }
+  let hull = [...lo.slice(0, -1), ...up.slice(0, -1)]
+  // 짧은 변을 합쳐 꼭짓점을 줄임(둘레의 6% 미만인 변의 끝점 제거, 최소 3개)
+  const per = hull.reduce((a, p, i) => a + Math.hypot(p[0] - hull[(i + 1) % hull.length][0], p[1] - hull[(i + 1) % hull.length][1]), 0)
+  let changed = true
+  while (changed && hull.length > 3) {
+    changed = false
+    for (let i = 0; i < hull.length && hull.length > 3; i++) {
+      const a = hull[i]
+      const b = hull[(i + 1) % hull.length]
+      if (Math.hypot(a[0] - b[0], a[1] - b[1]) < per * 0.06) {
+        hull.splice((i + 1) % hull.length, 1)
+        changed = true
+      }
+    }
+  }
+  const cx = hull.reduce((a, p) => a + p[0], 0) / hull.length
+  const cy = hull.reduce((a, p) => a + p[1], 0) / hull.length
+  return { base: hull, apex: [cx, cy] }
+}
+
+// 볼륨 높이(벽에서 꼭대기까지, m): 폭의 약 40%, 5~30cm
+export const volumeHeight = (rx, ry) => Math.min(0.3, Math.max(0.05, 0.4 * Math.min(rx, ry)))
+
+// 점이 다각형 안에 있나
+export function insidePoly(x, y, poly) {
+  let inside = false
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i]
+    const [xj, yj] = poly[j]
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside
+  }
+  return inside
+}
+
+// 볼륨 표면 높이: 꼭대기(apex)에서 가장자리로 갈수록 0까지 낮아짐(점에서 꼭대기 방향 반직선이 가장자리와 만나는 비율로)
+export function volumeSurfaceZ(vol, x, y) {
+  const [ax, ay] = vol.apex
+  const dx = x - ax
+  const dy = y - ay
+  const d = Math.hypot(dx, dy)
+  if (d < 1e-6) return vol.height
+  let edge = Infinity
+  const B = vol.base
+  for (let i = 0; i < B.length; i++) {
+    const [x1, y1] = B[i]
+    const [x2, y2] = B[(i + 1) % B.length]
+    // 반직선 a + t·(dx,dy)/d 와 선분 교차
+    const ex = x2 - x1
+    const ey = y2 - y1
+    const den = (dx / d) * ey - (dy / d) * ex
+    if (Math.abs(den) < 1e-9) continue
+    const t = ((x1 - ax) * ey - (y1 - ay) * ex) / den
+    const u = ((x1 - ax) * (dy / d) - (y1 - ay) * (dx / d)) / den
+    if (t > 0 && u >= 0 && u <= 1) edge = Math.min(edge, t)
+  }
+  if (!isFinite(edge) || d >= edge) return 0
+  return vol.height * (1 - d / edge)
 }

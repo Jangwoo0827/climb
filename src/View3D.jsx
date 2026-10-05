@@ -90,16 +90,23 @@ export default function View3D({ photoUrl, wallW, wallH, holds, p3, handTypes, s
       })
     }
     const g = new THREE.Group()
-    const pyr = new THREE.ConeGeometry(1, 1, 4, 1)
     for (const h of holds) {
       if (h.volume) {
-        const mat = new THREE.MeshStandardMaterial({ color: h.color, roughness: 0.8, flatShading: true })
-        const depth = Math.min(0.6, Math.max(h.rx, h.ry) * 0.7)
-        const m = new THREE.Mesh(pyr, mat)
-        m.rotation.x = Math.PI / 2 // 뿔 끝이 벽 밖(+z)
-        m.rotation.y = Math.PI / 4
-        m.scale.set(h.rx * 1.41, depth, h.ry * 1.41)
-        m.position.set(h.mx, h.my, depth / 2)
+        // 다각뿔: 꼭대기(apex)에서 바닥 다각형 각 변으로 삼각형. 앞면에 사진을 입히고 면마다 각지게(flat) 음영
+        const B = h.base
+        const pos = []
+        const uv = []
+        for (let i = 0; i < B.length; i++) {
+          const a = B[i]
+          const c = B[(i + 1) % B.length]
+          pos.push(h.apex[0], h.apex[1], h.height, a[0], a[1], 0, c[0], c[1], 0)
+          uv.push(h.apex[0], h.apex[1], a[0], a[1], c[0], c[1])
+        }
+        const geo = new THREE.BufferGeometry()
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+        geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2))
+        geo.computeVertexNormals()
+        const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: st.holdTex, roughness: 0.85, flatShading: true, side: THREE.DoubleSide }))
         g.add(m)
         continue
       }
@@ -124,12 +131,12 @@ export default function View3D({ photoUrl, wallW, wallH, holds, p3, handTypes, s
       const front = new THREE.MeshStandardMaterial({ map: st.holdTex, roughness: 0.7 })
       const side = new THREE.MeshStandardMaterial({ color: h.color, roughness: 0.8 })
       const m = new THREE.Mesh(geo, [front, side])
-      m.position.z = h.depth * 0.425 // 뒤쪽 깎인 면이 벽(z=0)에 붙게
+      m.position.z = h.depth * 0.425 + (h.base ?? 0) // 뒤쪽 깎인 면이 벽(또는 볼륨 표면)에 붙게
       g.add(m)
       // 포켓: 가운데 어두운 구멍
       if (h.type === 'pocket') {
         const hole = new THREE.Mesh(new THREE.CircleGeometry(r * 0.35, 16), new THREE.MeshBasicMaterial({ color: '#111' }))
-        hole.position.set(h.mx, h.my, h.depth + 0.002)
+        hole.position.set(h.mx, h.my, h.depth + (h.base ?? 0) + 0.002)
         g.add(hole)
       }
     }
