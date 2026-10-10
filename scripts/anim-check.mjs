@@ -31,8 +31,10 @@ for (const W of [3.5, 5])
       // 앱과 같은 실제 시간 간격(35ms)으로 샘플: 여러 손발이 바뀌면 재생 시간이 길어짐
       const n = moversOf(a, b).length
       const dt = 0.05 / (n > 1 ? 0.4 + 0.6 * n : 1)
+      const bs = { bend: {}, dt: 0.7 * (n > 1 ? 0.4 + 0.6 * n : 1) * dt }
+      blendPose(a, b, 0, bs)
       for (let t = dt; t <= 1 + dt - 1e-9; t += dt) {
-        const p = blendPose(a, b, Math.min(1, t))
+        const p = blendPose(a, b, Math.min(1, t), bs)
         for (const [x, y] of bones) {
           const d = dist(p[x], p[y]) - dist(b[x], b[y]) // 늘어나는 것만 문제(정면에서 짧아 보이는 건 팔꿈치를 벽 앞뒤로 돌리는 중)
           worstBone = Math.max(worstBone, d)

@@ -104,8 +104,8 @@ function makeSolver(holds, body, heightM, obstacles = []) {
     const T = holds[st.to]
     const tp = { x: T.mx, y: T.my }
     // 점프는 양손이 목표 홀드로 함께 뻗음
-    const hl = { x: tp.x - 0.06, y: tp.y }
-    const hr = { x: tp.x + 0.06, y: tp.y }
+    const hl = { x: tp.x - 0.1, y: tp.y }
+    const hr = { x: tp.x + 0.1, y: tp.y }
     const reach = 0.95 * arm
     // 어깨는 출발 홀드 쪽으로 살짝 기울되, 어느 팔도 늘어나지 않도록 좌우 위치를 조정
     let sx = tp.x + Math.max(-0.12, Math.min(0.12, (from.mx - tp.x) * 0.25))
@@ -127,9 +127,10 @@ function makeSolver(holds, body, heightM, obstacles = []) {
     const shR = add(S, { x: sw / 2, y: 0 })
     const hipL = add(hip, { x: -0.05 * heightM, y: 0 })
     const hipR = add(hip, { x: 0.05 * heightM, y: 0 })
-    // 무릎을 살짝 굽혀 발을 끌어올린 채 벽에서 떨어져 있음
-    const footL = { x: hip.x - 0.09 * heightM, y: Math.max(FOOT_CLEAR, hip.y - 0.66 * leg) }
-    const footR = { x: hip.x + 0.09 * heightM, y: Math.max(FOOT_CLEAR, hip.y - 0.66 * leg) }
+    // 정점: 몸을 쭉 펴서 팔을 위로 뻗고, 다리는 거의 곧게 아래로 늘어뜨림(무릎만 살짝 굽힘). 발은 목표 쪽 반대로 조금 끌림
+    const trail = Math.sign(from.mx - tp.x) * 0.03 * heightM
+    const footL = { x: hip.x - 0.06 * heightM + trail, y: Math.max(FOOT_CLEAR, hip.y - 0.93 * leg) }
+    const footR = { x: hip.x + 0.06 * heightM + trail, y: Math.max(FOOT_CLEAR, hip.y - 0.93 * leg) }
     const torsoSeg = [S, hip]
     return {
       hands: [L, R],
@@ -140,7 +141,7 @@ function makeSolver(holds, body, heightM, obstacles = []) {
         { side: 'L', kind: 'air', id: null },
         { side: 'R', kind: 'air', id: null },
       ],
-      p: {
+      p: Object.defineProperty({
         head: { x: S.x, y: S.y + 0.13 * heightM },
         shL, shR,
         elL: elbow(shL, hl, arm / 2),
@@ -150,7 +151,7 @@ function makeSolver(holds, body, heightM, obstacles = []) {
         kneeR: joint(hipR, footR, leg / 2, leg / 2, 1, null, 0.05),
         footL, footR,
         neck: { x: S.x, y: S.y },
-      },
+      }, 'air', { value: true }), // 공중 자세 표시(좌표가 아니라 Object.keys에는 안 잡힘): 애니메이션이 손발을 동시에 움직이게
     }
   }
 

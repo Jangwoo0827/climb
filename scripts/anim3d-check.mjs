@@ -46,8 +46,10 @@ for (const height of [150, 165, 185])
       // 이전 프레임 끝 자세는 이전 프레임의 잡기로(앱에서 실제로 보이던 자세)
       let prev = process.env.MODE === '2d' /* 비교용: 3D 보정 없이 2D 동작만 */ ? Object.fromEntries(Object.entries(a).map(([k, q]) => [k, { ...q, z: 0 }])) : pose3d(a, H, frames[i - 1].fig.feetInfo, gripsOf(frames[i - 1].fig), [a])
       const lastStep = { hl: 0, hr: 0, footL: 0, footR: 0 }
+      const bs3 = { bend: {}, dt: 0.7 * (n > 1 ? 0.4 + 0.6 * n : 1) * dt } // 앱처럼 프레임 사이 상태를 이어 씀
+      blendPose(a, b, 0, bs3)
       for (let t = dt; t <= 1 + 1e-9; t += dt) {
-        const p2 = blendPose(a, b, Math.min(1, t))
+        const p2 = blendPose(a, b, Math.min(1, t), bs3)
         const p = process.env.MODE === '2d' /* 비교용: 3D 보정 없이 2D 동작만 */ ? Object.fromEntries(Object.entries(p2).map(([k, q]) => [k, { ...q, z: 0 }])) : pose3d(p2, H, frames[i].fig.feetInfo, grips, [a, b])
         samples++
         if (['hl', 'hr', 'footL', 'footR'].some((k) => d3(p[k], prev[k]) > 0.12)) jumps++

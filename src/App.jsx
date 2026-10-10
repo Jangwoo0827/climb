@@ -180,9 +180,13 @@ function usePoseTween(target, ms = 700) {
     const dur = n > 1 ? ms * (0.4 + 0.6 * n) : ms
     let raf
     const t0 = performance.now()
+    const bs = { bend: {}, dt: 0.017 } // 굽힘 변화 속도 제한용 상태
+    let last = t0
     const tick = (now) => {
       const t = Math.min(1, (now - t0) / dur)
-      st.set(blendPose(from, target, t))
+      bs.dt = Math.min(0.1, (now - last) / 1000)
+      last = now
+      st.set(blendPose(from, target, t, bs))
       if (t < 1) raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)

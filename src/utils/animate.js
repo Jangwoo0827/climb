@@ -5,11 +5,20 @@
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y)
 const lerp = (a, b, u) => ({ x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u })
 const clamp01 = (t) => Math.min(1, Math.max(0, t))
+const distSeg = (p, a, b) => {
+  const vx = b.x - a.x
+  const vy = b.y - a.y
+  const l = vx * vx + vy * vy || 1e-9
+  const t = Math.max(0, Math.min(1, ((p.x - a.x) * vx + (p.y - a.y) * vy) / l))
+  return Math.hypot(p.x - a.x - vx * t, p.y - a.y - vy * t)
+}
+// 굽힘이 1초에 바뀔 수 있는 최대 크기(−1~1 범위에서). 팔다리가 한 프레임에 곧게 펴졌다 반대로 접히는 삐걱거림을 막음
+const BEND_RATE = 4.5
 const easeInOut = (t) => (t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2)
 // 스프링 같은 몸 이동: 천천히 출발해(속도 0) 끝에서 목표를 살짝(약 4%) 지나쳤다가 자리를 잡음. 체중이 실리는 느낌
 export const spring = (t) => {
   const x = t * t * (3 - 2 * t) // 부드러운 출발
-  const c1 = 0.6
+  const c1 = 0.3
   return 1 + (c1 + 1) * (x - 1) ** 3 + c1 * (x - 1) ** 2
 }
 const seg = (t, a, b, f = easeInOut) => f(clamp01((t - a) / (b - a)))
@@ -48,17 +57,22 @@ export function moversOf(from, to) {
 }
 
 // from, to: 관절 좌표(stickman.js의 p), t: 0~1
-export function blendPose(from, to, t) {
+// st: 프레임 사이에 이어 쓰는 상태 { bend: {}, dt: 지난 프레임 이후 초 }. 주면 굽힘 변화 속도를 제한해 떨림을 없앰(없으면 무상태로 동작)
+export function blendPose(from, to, t, st = null) {
+  if (st && t <= 0) st.bend = {}
+  // 점프(공중 자세가 한쪽에 있음): 손발이 차례가 아니라 동시에 — 발로 박차고 팔을 뻗으며 몸이 솟구침
+  const air = !!(from.air || to.air)
   // 1) 움직이는 손발과 각자의 시간 구간: 여러 개면 0.15~1을 나눠 하나씩(손발 따로)
   const movers = moversOf(from, to)
   const n = movers.length
   const win = {}
   const w = n > 1 ? 0.85 / n : 0.7
-  movers.forEach((m, i) => (win[m.k] = n > 1 ? [0.15 + i * w, 0.15 + (i + 1) * w] : [0.3, 1]))
+  movers.forEach((m, i) => (win[m.k] = air ? (m.k.startsWith('foot') ? [0.05, 0.85] : [0, 0.9]) : n > 1 ? [0.15 + i * w, 0.15 + (i + 1) * w] : [0.3, 1]))
   // 2) 몸 중심(엉덩이·어깨 중심): 스프링으로 살짝 지나쳤다 자리 잡기. 여러 손발이면 마지막 손발이 출발할 무렵까지 몸을 옮김
-  const bodyEnd = n > 1 ? win[movers[n - 1].k][0] + w * 0.5 : 0.65
+  const bodyEnd = air ? 0.9 : n > 1 ? win[movers[n - 1].k][0] + w * 0.5 : 0.65
   const tb = n ? clamp01(t / bodyEnd) : t
-  const ub = n ? spring(tb) : easeInOut(t)
+  // 점프는 빠르게 솟구쳤다가(앞이 가파른 곡선) 부드럽게 정점에 닿음
+  const ub = air ? 1 - (1 - tb) ** 2 : n ? spring(tb) : easeInOut(t)
   const hip = lerp(from.hip, to.hip, ub)
   const neck = lerp(from.neck, to.neck, ub)
   const p = { hip, neck }
@@ -119,8 +133,37 @@ export function blendPose(from, to, t) {
     const s0 = sideOf(from[rootKey], from[jointKey], from[end])
     const s1 = sideOf(to[rootKey], to[jointKey], to[end])
     const v = uOf[end] ?? ub
-    const bend = s0 === s1 ? s1 : s0 * (1 - v) + s1 * v
-    const { joint, tip } = ik2(p[rootKey], p[end], l1, l2, bend)
+    // 방향이 바뀌는 구간은 앞 60% 안에 끝냄(속도 제한으로 늦어져도 도착 전에 따라잡도록)
+    const vv = s0 === s1 ? 1 : Math.min(1, v / 0.6)
+    let bend = s0 === s1 ? s1 : s0 * (1 - vv) + s1 * vv
+    if (st) {
+      const prev = st.bend[end] ?? bend
+      const step = BEND_RATE * (st.dt ?? 0.017)
+      bend = t >= 1 ? bend : prev + Math.max(-step, Math.min(step, bend - prev))
+      st.bend[end] = bend
+    }
+    let { joint, tip } = ik2(p[rootKey], p[end], l1, l2, bend)
+    // 팔꿈치가 몸통(목~골반 선)에 5cm 안으로 다가가면, 반대쪽으로 꺾인 해와 위치를 섞어 몸통에서 벌림.
+    // 섞는 비율은 시간에 따라 서서히만 변함(속도 제한) → 두 해 사이를 순간적으로 오가며 튀지 않음.
+    // 키프레임은 몸통에서 5cm 이상이라 목표 비율이 0 → 도착 때는 항상 목표 자세
+    if (end === 'hl' || end === 'hr') {
+      const d0 = distSeg(joint, p.neck, p.hip)
+      let w = 0
+      let alt = null
+      if (d0 < 0.05) {
+        alt = ik2(p[rootKey], p[end], l1, l2, -bend)
+        w = clamp01((0.05 - d0) / 0.02) * clamp01((distSeg(alt.joint, p.neck, p.hip) - d0) / 0.02)
+      }
+      if (st) {
+        st.tw = st.tw ?? {}
+        const prevW = st.tw[end] ?? 0
+        const stepW = 6 * (st.dt ?? 0.017)
+        w = t >= 1 ? 0 : prevW + Math.max(-stepW, Math.min(stepW, w - prevW))
+        st.tw[end] = w
+        if (w > 0 && !alt) alt = ik2(p[rootKey], p[end], l1, l2, -bend)
+      }
+      if (alt && w > 0) joint = lerp(joint, alt.joint, w)
+    }
     p[jointKey] = joint
     p[end] = tip
   }
