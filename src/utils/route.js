@@ -98,7 +98,8 @@ class MinHeap {
   }
 }
 
-export function findRoute(holds, body, startIds, finishIds) {
+// opts.holdPenalty: { 홀드 번호: 추가 비용 } — 이미 다른 후보가 쓴 홀드를 피해 서로 다른 코스를 만들 때 씀
+export function findRoute(holds, body, startIds, finishIds, opts = {}) {
   const n = holds.length
   if (!n || !startIds.length || !finishIds.length) return null
   const maxSize = Math.max(...holds.map((h) => h.size))
@@ -139,6 +140,7 @@ export function findRoute(holds, body, startIds, finishIds) {
         const dyno = !match && d > body.maxReach || Math.abs(holds[t].my - holds[fixed].my) > body.maxVertical
         if (dyno && dy < -0.05) continue // 점프는 위나 옆으로만
         let cost
+        const extra = opts.holdPenalty?.[t] ?? 0
         if (dyno) {
           // 점프는 위험하고 힘들어서 큰 비용. 멀수록 더 비쌈
           cost = 30 + (d - body.maxReach) * 20
@@ -161,6 +163,7 @@ export function findRoute(holds, body, startIds, finishIds) {
           cost += typePenalty(holds[t]) * body.level.grip // 잡기 어려운 종류(크림프, 슬로퍼 등)는 초보일수록 감점
           cost = Math.max(0.2, cost)
         }
+        cost += extra
         const nl = dyno ? t : hand === 'L' ? t : l // 점프하면 양손이 목표 홀드로 감
         const nr = dyno ? t : hand === 'R' ? t : r
         const nk = key(nl, nr)

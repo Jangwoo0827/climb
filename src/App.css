@@ -172,3 +172,8 @@ main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .detect-src.click { pointer-events: auto; cursor: pointer; }
 .wall.drawing { touch-action: none; cursor: crosshair; }
 .scale-src { position: absolute; top: 40px; right: 8px; z-index: 5; padding: 4px 10px; border-radius: 999px; background: rgba(20, 23, 31, 0.85); color: #cfd6e4; font-size: 12px; pointer-events: none; }
+.alts { display: flex; gap: 6px; }
+.alt { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 5px 4px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.12); background: rgba(255, 255, 255, 0.04); color: #cfd6e4; cursor: pointer; font-size: 13px; }
+.alt small { color: #9aa3b5; font-size: 10px; }
+.alt.on { background: #ffd400; border-color: #ffd400; color: #111; }
+.alt.on small { color: #333; }

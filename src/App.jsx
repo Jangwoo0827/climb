@@ -8,6 +8,7 @@ import { TERM_NAMES, scoreFrames } from './utils/reward.js'
 import { pose3d, project } from './utils/depth.js'
 import { holdOutline, holdProfile, insidePoly, volumeBase, volumeHeight, volumeNormal, volumeSurfaceZ } from './utils/hold3d.js'
 import { estimateScaleFromImage, isReliable } from './utils/scale.js'
+import { rankRoutes } from './utils/rank.js'
 import { handPose } from './utils/hand.js'
 
 const View3D = lazy(() => import('./View3D.jsx'))
@@ -525,7 +526,7 @@ export default function App() {
       .map((a) => ({ ...a, type: 'jug', footOnly: true }))
   }, [feetFree, allHolds, usable, photo])
 
-  const plan = useMemo(() => {
+  const basePlan = useMemo(() => {
     if (!photo || usable.length < 3) return null
     const m = toMeters([...usable, ...footExtras], wallWidth, photo.aspect)
     const ys = m.slice(0, usable.length).map((h) => h.my)
@@ -538,8 +539,13 @@ export default function App() {
     const startIds = picked('start').length ? picked('start') : handM.filter((h) => h.my < lo + span * 0.2).map((h) => h.id)
     const finishIds = picked('finish').length ? picked('finish') : handM.filter((h) => h.my > hi - span * 0.1).map((h) => h.id)
     const route = findRoute(m, model, startIds, finishIds)
-    return { m, route }
+    return { m, route, startIds, finishIds }
   }, [photo, usable, footExtras, wallWidth, model])
+
+  // 코스 후보 순위(점수 1~3위): 계산이 오래 걸릴 수 있어 화면이 그려진 뒤에 따로 계산
+  const [alts, setAlts] = useState([])
+  const [choice, setChoice] = useState(0) // 고른 후보 번호(0 = 1위)
+  const plan = useMemo(() => (basePlan && alts[choice] ? { ...basePlan, route: alts[choice].route } : basePlan), [basePlan, alts, choice])
 
   const nSteps = plan?.route?.steps.length ?? 0
   // 프레임: 출발 → (발 옮기기 → 손 옮기기)… 한 프레임에 팔다리 하나만 움직임
@@ -551,6 +557,19 @@ export default function App() {
       .filter((a) => !usable.some((u) => Math.hypot((u.x - a.x) * photo.aspect, u.y - a.y) < 0.03))
       .map((a) => ({ mx: a.x * wallWidth, my: (1 - a.y) * wallH, r: Math.sqrt((a.size * wallWidth * wallH) / Math.PI) }))
   }, [photo, allHolds, usable, wallWidth])
+  useEffect(() => {
+    setChoice(0)
+    if (!basePlan?.route) return setAlts([])
+    let cancelled = false
+    const id = setTimeout(() => {
+      const list = rankRoutes(basePlan, model, height / 100, obstacles)
+      if (!cancelled) setAlts(list)
+    }, 30)
+    return () => {
+      cancelled = true
+      clearTimeout(id)
+    }
+  }, [basePlan, model, height, obstacles])
   // 3D 보기에서 벽 위에 튀어나오게 그릴 홀드: 루트 홀드 + 그 밖에 검출된 모든 홀드. 색은 사진에서, 크기는 검출 상자·넓이로
   const holds3d = useMemo(() => {
     if (!photo) return []
@@ -927,6 +946,16 @@ export default function App() {
                 <p className="hint">점프까지 써도 이어지는 경로를 못 찾았어요. 「내 몸」 탭에서 사진 속 벽 높이가 맞는지 확인하고, 시작·끝 홀드를 다시 지정하거나 🎨로 홀드 색을 다시 골라 보세요.</p>
               ) : (
                 <>
+                  {alts.length > 1 && (
+                    <div className="alts" role="tablist" aria-label="코스 후보">
+                      {alts.map((a, i) => (
+                        <button key={i} role="tab" aria-selected={choice === i} className={choice === i ? 'alt on' : 'alt'} onClick={() => { setPlaying(false); setFrameIdx(0); setChoice(i) }} title={`점수 ${a.score.toFixed(1)} · V${a.grade} · 동작 ${a.moves}번`}>
+                          <b>{i + 1}위</b>
+                          <small>점수 {a.score.toFixed(1)} · V{a.grade}</small>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   <div className="stepper">
                     <button className="nav" disabled={fi <= 0} onClick={() => { setPlaying(false); setFrameIdx(fi - 1) }}>◀</button>
                     <button className="nav play" onClick={togglePlay} aria-label={playing ? '멈춤' : '재생'}>{playing ? '❚❚' : '⏵'}</button>
