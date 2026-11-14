@@ -28,12 +28,23 @@ def body_model(height_cm, ape_index, level):
                      (arm = max(0.3, (span − 0.23 × 키(m)) / 2), 손이 허리 위에 있게 하는 두 손 높이 차 한계)
     힌트: tests/test_route.py 위쪽 테스트의 숫자로 손계산해 보세요.
     """
-    raise NotImplementedError
+    L = LEVELS[level]
+    hm = height_cm/100
+    span =  hm * ape_index
+    max_reach = min(span * L["reach_ratio"], span * 0.92)
+    comfort = span*L["comfort"]
+    jump_reach = max_reach + span* L["jump"]
+    arm = max(0.3, (span - 0.23 * hm)/2)
+    max_vertical = arm*0.97+0.3*hm - 0.05
+    return {"span" : span, "max_reach" : max_reach, "max_vertical" : max_vertical,"comfort" : comfort, "jump_reach" : jump_reach, "level" : L}
 
 
 def dist(a, b):
     """두 홀드 사이 거리(m)."""
-    raise NotImplementedError
+    dx = a["mx"] - b["mx"]
+    dy = a["my"] - b["my"]
+    
+    return math.hypot(dx,dy)
 
 
 def step_cost(holds, body, hand, l, r, t, max_size, hold_penalty=None):
@@ -63,7 +74,41 @@ def step_cost(holds, body, hand, l, r, t, max_size, hold_penalty=None):
       6. 마지막에 hold_penalty.get(t, 0)을 더한다(점프에도 적용)
     cross: 왼손이면 t.mx − fixed.mx, 오른손이면 fixed.mx − t.mx
     """
-    raise NotImplementedError
+    cur = l if hand == "L" else r
+    fixed = r if hand == "L" else l
+    if t == cur or holds[t].get("foot_only"):
+        return None
+    d = dist(holds[t], holds[fixed])
+    if d > body["jump_reach"]: return None
+    dy = holds[t]["my"] - holds[cur]["my"]
+    match = (t==fixed)
+    dyno = (not match and d > body["max_reach"] or abs(holds[t]["my"] - holds[fixed]["my"]) > body["max_vertical"])
+    if dyno and dy < -0.05: return None
+    if dyno:
+        cost = 30 + (d - body["max_reach"]) * 20
+    else:
+      travel = dist(holds[t], holds[cur])
+      comfort = body["comfort"]
+      cost = 0.6 + (travel / comfort)**2*1.2
+      cost += (max(0,d-comfort*0.8)/comfort)**2*12
+      if match: cost+=0.4
+      if holds[cur]["my"] < holds[fixed]["my"]-0.05: cost-=0.5
+      gap = abs(holds[t]["my"]-holds[fixed]["my"])
+      cost += max (0, gap - 0.35)* 6
+      if dy < 0: cost+= -dy * body["level"]["down_penalty"]
+      if dy > 0: cost -= min(dy,0.5)*0.6
+      cross = holds[t]["mx"] - holds[fixed]["mx"] if hand == "L" else holds[fixed]["mx"] - holds[t]["mx"]
+      if cross > 0.25:cost+=2
+      cost += (1 - holds[t]["size"]/max_size)*body["level"]["jug_bonus"]
+      cost += holds[t].get("penalty",0)* body["level"]["grip"]
+      cost = max(0.2, cost)
+
+
+    extra = (hold_penalty or {}).get(t,0)
+    return cost + extra, dyno
+
+
+
 
 
 def find_route(holds, body, start_ids, finish_ids, hold_penalty=None):
@@ -83,4 +128,49 @@ def find_route(holds, body, start_ids, finish_ids, hold_penalty=None):
       - goal에서 prev를 거꾸로 따라가 steps를 만들고 뒤집는다
     힌트: 상태 (l, r)를 튜플로 dict의 키에 쓰면 편합니다.
     """
-    raise NotImplementedError
+    n = len(holds)
+    if not n or not start_ids or not finish_ids: return None
+    max_size = max(h["size"] for h in holds)
+    finish = set(finish_ids)
+    dp = {}
+    prev={}
+    heap=[]
+    for a in start_ids:
+        for b in start_ids:
+            if a == b and len(start_ids)>1: continue
+            if dist(holds[a], holds[b])>body["max_reach"] or abs(holds[a]["my"] - holds[b]["my"])>body["max_vertical"]: continue
+            dp[(a,b)]=0
+            prev[(a,b)]=None
+            heapq.heappush(heap,(0,a,b))
+    if not heap:
+        return None
+    goal = None
+    while heap:
+        c,l,r = heapq.heappop(heap)
+        if c > dp.get((l,r), math.inf): continue
+        if l in finish and r in finish:
+            goal = (l,r)
+            break
+        for hand in ("L","R"):
+            for t in range(n):
+                res = step_cost(holds,body,hand,l,r,t,max_size,hold_penalty)
+                if res is None:
+                    continue
+                cost,dyno = res
+                nl = t if hand =="L" else l
+                nr = r if hand=="L" else t
+                if dyno: nl,nr = t,t
+                nc = c+cost
+                if nc < dp.get((nl,nr), math.inf):
+                    dp[(nl,nr)]=nc
+                    prev[(nl,nr)]=((l,r),hand,t,dyno)
+                    heapq.heappush(heap,(nc,nl,nr))
+    if goal is None: return None
+    steps = []
+    k= goal
+    while prev[k] is not None:
+        frm, hand,t,dyno = prev[k]
+        steps.append({"hand": hand,"to":t,"dyno":dyno})
+        k = frm
+    steps.reverse()
+    return {"start":k,"steps":steps,"cost":dp[goal]}
